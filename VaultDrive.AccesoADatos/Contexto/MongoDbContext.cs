@@ -1,0 +1,25 @@
+using MongoDB.Driver;
+using Microsoft.Extensions.Configuration;
+using VaultDrive.Abstracciones.Modelos;
+
+namespace VaultDrive.AccesoADatos.Contexto
+{
+    public class MongoDbContext
+    {
+        private readonly IMongoDatabase _database;
+
+        public MongoDbContext(IConfiguration configuration)
+        {
+            var connectionString = configuration.GetConnectionString("MongoDb");
+            var databaseName = configuration["MongoDbSettings:DatabaseName"];
+
+            var client = new MongoClient(connectionString);
+            _database = client.GetDatabase(databaseName);
+        }
+
+        public IMongoCollection<T> GetCollection<T>(string collectionName)
+        {
+            return _database.GetCollection<T>(collectionName);
+        }
+    }
+}
