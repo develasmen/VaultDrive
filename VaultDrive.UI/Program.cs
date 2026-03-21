@@ -1,13 +1,17 @@
-using Microsoft.AspNetCore.Identity;
-using AspNetCore.Identity.MongoDbCore.Infrastructure;
 using AspNetCore.Identity.MongoDbCore.Extensions;
+using AspNetCore.Identity.MongoDbCore.Infrastructure;
+using AspNetCore.Identity.MongoDbCore.Models;
+using Microsoft.AspNetCore.Identity;
+using MongoDB.Driver;
 using VaultDrive.Abstracciones.Modelos;
 using VaultDrive.AccesoADatos.Contexto;
 using VaultDrive.LogicaDeNegocio.Servicios;
-using AspNetCore.Identity.MongoDbCore.Models;
-using MongoDB.Driver;
+using WebApplicationAPP.Repositories;
 
 var builder = WebApplication.CreateBuilder(args);
+
+builder.Services.AddScoped<ICarpetaRepository, CarpetaRepository>();
+builder.Services.AddScoped<CarpetaService>();
 
 builder.Services.AddCors(options =>
 {
