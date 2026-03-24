@@ -10,10 +10,6 @@
     <PackageReference Include="Microsoft.AspNetCore.Identity" Version="2.3.9" />
   </ItemGroup>
 
-  <ItemGroup>
-    <Folder Include="Repositories\" />
-  </ItemGroup>
-
   <PropertyGroup>
     <TargetFramework>net9.0</TargetFramework>
     <Nullable>enable</Nullable>

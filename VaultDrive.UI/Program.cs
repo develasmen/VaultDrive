@@ -6,7 +6,7 @@ using MongoDB.Driver;
 using VaultDrive.Abstracciones.Modelos;
 using VaultDrive.AccesoADatos.Contexto;
 using VaultDrive.LogicaDeNegocio.Servicios;
-using WebApplicationAPP.Repositories;
+using VaultDrive.Abstracciones.Repositories;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -93,7 +93,7 @@ using (var scope = app.Services.CreateScope())
 }
 
 // Creamos las colleciones automaticamente si no existen
-var mongoContext = app.Services.GetRequiredService<MongoDbContext>();
+/*var mongoContext = app.Services.GetRequiredService<MongoDbContext>();
 
 var colecciones = new[]
 {
@@ -118,6 +118,6 @@ foreach (var coleccion in colecciones)
             .Database
             .CreateCollectionAsync(coleccion);
     }
-}
+}*/
 
 app.Run();

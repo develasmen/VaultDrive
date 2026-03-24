@@ -18,8 +18,8 @@ namespace VaultDrive.UI.Controllers
         [HttpPost]
         public async Task<IActionResult> Crear([FromBody] CrearCarpetaDto dto)
         {
-            var carpeta = await _carpetaService.Crear(dto.UsuarioId, dto.Nombre, dto.CarpetaPadre);
-            return Ok(carpeta);
+            var carpeta = await _carpetaService.Crear(dto.UsuarioId, dto.Nombre, dto.PortadaImg, dto.CarpetaPadre);
+            return CreatedAtAction(nameof(GetByUser), new { usuarioId = dto.UsuarioId }, carpeta);
 
         }
         [HttpGet("{usuarioId}")]

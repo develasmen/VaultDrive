@@ -3,14 +3,14 @@ using MongoDB.Driver;
 using VaultDrive.Abstracciones.Modelos;
 using VaultDrive.AccesoADatos.Contexto;
 
-namespace WebApplicationAPP.Repositories
+namespace VaultDrive.Abstracciones.Repositories
 {
     public class CarpetaRepository : ICarpetaRepository
     {
         private readonly IMongoCollection<Carpeta> _collection;
         public CarpetaRepository(MongoDbContext context)
         {
-            _collection = context.GetCollection<Carpeta>();
+            _collection = context.GetCollection<Carpeta>("Carpeta");
         }
 
         public async Task Crear(Carpeta carpeta)

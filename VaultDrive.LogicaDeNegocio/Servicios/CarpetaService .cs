@@ -1,5 +1,5 @@
 using VaultDrive.Abstracciones.Modelos;
-using WebApplicationAPP.Repositories;
+using VaultDrive.Abstracciones.Repositories;
 
 namespace VaultDrive.LogicaDeNegocio.Servicios
 {
@@ -12,12 +12,13 @@ namespace VaultDrive.LogicaDeNegocio.Servicios
             _repository = repository;
         }
 
-        public async Task<Carpeta> Crear(Guid usuarioId, string nombre, Guid? carpetaPadre)
+        public async Task<Carpeta> Crear(Guid usuarioId, string nombre, string portadaImg, Guid? carpetaPadre)
         {
             var carpeta = new Carpeta
             {
                 UsuarioId = usuarioId,
                 Nombre = nombre,
+                PortadaImg = portadaImg,
                 CarpetaPadre = carpetaPadre
             };
             await _repository.Crear(carpeta);
@@ -28,7 +29,7 @@ namespace VaultDrive.LogicaDeNegocio.Servicios
         {
             return await _repository.GetByUser(usuarioId);
         }
-        public async Task<Carpeta> GetById(Guid id)
+        public async Task<Carpeta?> GetById(Guid id)
         {
             return await _repository.GetById(id);
         }

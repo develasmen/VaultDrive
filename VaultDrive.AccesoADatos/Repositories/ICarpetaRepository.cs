@@ -1,6 +1,6 @@
 ﻿using VaultDrive.Abstracciones.Modelos;
 
-namespace WebApplicationAPP.Repositories
+namespace VaultDrive.Abstracciones.Repositories
 {
     public interface ICarpetaRepository
     {
