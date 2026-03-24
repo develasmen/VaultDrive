@@ -1,6 +1,5 @@
 using MongoDB.Driver;
 using Microsoft.Extensions.Configuration;
-using VaultDrive.Abstracciones.Modelos;
 
 namespace VaultDrive.AccesoADatos.Contexto
 {
