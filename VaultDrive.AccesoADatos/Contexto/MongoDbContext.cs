@@ -1,6 +1,8 @@
 using MongoDB.Driver;
 using Microsoft.Extensions.Configuration;
-using VaultDrive.Abstracciones.Modelos;
+using MongoDB.Bson.Serialization;
+using MongoDB.Bson.Serialization.Serializers;
+using MongoDB.Bson;
 
 namespace VaultDrive.AccesoADatos.Contexto
 {
@@ -10,6 +12,13 @@ namespace VaultDrive.AccesoADatos.Contexto
 
         public MongoDbContext(IConfiguration configuration)
         {
+            // Solución para IDs (GUIDs)
+            if (!BsonClassMap.IsClassMapRegistered(typeof(object)))
+            {
+                try { BsonSerializer.RegisterSerializer(new GuidSerializer(GuidRepresentation.Standard)); } 
+                catch { }
+            }
+
             var connectionString = configuration.GetConnectionString("MongoDb");
             var databaseName = configuration["MongoDbSettings:DatabaseName"];
 
