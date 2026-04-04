@@ -22,6 +22,8 @@ builder.Services.AddScoped<IComentarioRepository, ComentarioRepository>();
 builder.Services.AddScoped<ComentarioService>();
 builder.Services.AddScoped<IFavoritosRepository, FavoritosRepository>();
 builder.Services.AddScoped<FavoritosService>();
+builder.Services.AddScoped<IRegistroActividadRepository, RegistroActividadRepository>();
+builder.Services.AddScoped<RegistroActividadService>();
 
 // --- 2. CONFIGURACIÓN DE CORS ---
 builder.Services.AddCors(options =>
