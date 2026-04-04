@@ -43,5 +43,10 @@ namespace VaultDrive.LogicaDeNegocio.Servicios
         {
             await _signInManager.SignOutAsync();
         }
+
+        public async Task<ApplicationUser?> ObtenerUsuarioPorCorreo(string correo)
+        {
+            return await _userManager.FindByEmailAsync(correo);
+        }
     }
 }

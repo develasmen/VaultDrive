@@ -35,7 +35,16 @@ namespace VaultDrive.UI.Controllers
             var resultado = await _authService.IniciarSesion(dto.Correo, dto.Contrasena);
 
             if (resultado.Succeeded)
-                return Ok(new { mensaje = "Login exitoso" });
+            {
+                var usuario = await _authService.ObtenerUsuarioPorCorreo(dto.Correo);
+                return Ok(new 
+                { 
+                    mensaje = "Login exitoso",
+                    id = usuario.Id,
+                    nombre = usuario.Nombre,
+                    correo = usuario.Email
+                });
+            }
 
             return Unauthorized(new { mensaje = "Correo o contraseña incorrectos" });
         }
