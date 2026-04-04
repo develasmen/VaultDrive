@@ -18,6 +18,10 @@ builder.Services.AddSingleton<MongoDbContext>();
 builder.Services.AddScoped<ICarpetaRepository, CarpetaRepository>();
 builder.Services.AddScoped<CarpetaService>();
 builder.Services.AddScoped<AuthService>();
+builder.Services.AddScoped<IComentarioRepository, ComentarioRepository>();
+builder.Services.AddScoped<ComentarioService>();
+builder.Services.AddScoped<IFavoritosRepository, FavoritosRepository>();
+builder.Services.AddScoped<FavoritosService>();
 
 // --- 2. CONFIGURACIÓN DE CORS ---
 builder.Services.AddCors(options =>
