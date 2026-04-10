@@ -24,6 +24,9 @@ builder.Services.AddScoped<IFavoritosRepository, FavoritosRepository>();
 builder.Services.AddScoped<FavoritosService>();
 builder.Services.AddScoped<IRegistroActividadRepository, RegistroActividadRepository>();
 builder.Services.AddScoped<RegistroActividadService>();
+builder.Services.AddScoped<IEtiquetaRepository, EtiquetaRepository>();
+builder.Services.AddScoped<IArchivoEtiquetaRepository, ArchivoEtiquetaRepository>();
+builder.Services.AddScoped<EtiquetaService>();
 
 // --- 2. CONFIGURACIÓN DE CORS ---
 builder.Services.AddCors(options =>
@@ -130,7 +133,7 @@ using (var scope = app.Services.CreateScope())
     {
         "Carpeta", "Archivo", "ArchivoPersonalizado", "ConfiguracionUsuario",
         "Etiqueta", "ArchivoEtiqueta", "RegistroActividad", "Favoritos",
-        "Comentarios", "Notificaciones", "VersionArchivo"
+        "Comentarios", "VersionArchivo"
     };
 
     try 
