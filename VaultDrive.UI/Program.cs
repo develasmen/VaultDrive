@@ -27,6 +27,10 @@ builder.Services.AddScoped<RegistroActividadService>();
 builder.Services.AddScoped<IEtiquetaRepository, EtiquetaRepository>();
 builder.Services.AddScoped<IArchivoEtiquetaRepository, ArchivoEtiquetaRepository>();
 builder.Services.AddScoped<EtiquetaService>();
+builder.Services.AddScoped<IArchivoPersonalizadoRepository, ArchivoPersonalizadoRepository>();
+builder.Services.AddScoped<IVersionArchivoRepository, VersionArchivoRepository>();
+builder.Services.AddScoped<ArchivoPersonalizadoService>();
+builder.Services.AddScoped<VersionArchivoService>();
 
 // --- 2. CONFIGURACIÓN DE CORS ---
 builder.Services.AddCors(options =>

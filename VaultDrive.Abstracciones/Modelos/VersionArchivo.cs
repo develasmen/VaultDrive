@@ -12,6 +12,7 @@ namespace VaultDrive.Abstracciones.Modelos
         public long Tamaño { get; set; }
         public DateTime FechaVersion { get; set; } = DateTime.UtcNow;
         public string ComentarioCambio { get; set; } = string.Empty;
+        public string CambiosRealizados { get; set; } = string.Empty;
         public Guid UsuarioId { get; set; }
     }
 }
