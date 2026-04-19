@@ -9,10 +9,14 @@ namespace VaultDrive.UI.Controllers
     public class ArchivoController : ControllerBase
     {
         private readonly ArchivoService _service;
+        private readonly IWebHostEnvironment _webHostEnvironment;
+        private readonly AuthService _authService;
 
-        public ArchivoController(ArchivoService service)
+        public ArchivoController(ArchivoService service, IWebHostEnvironment webHostEnvironment, AuthService authService)
         {
             _service = service;
+            _webHostEnvironment = webHostEnvironment; // Solucion para no hardcodear la ruta de almacenamiento en el proyecto 
+            _authService = authService;
         }
 
         [HttpPost]
@@ -90,6 +94,65 @@ namespace VaultDrive.UI.Controllers
                 return NotFound(new { success = false, mensaje = "Archivo no encontrado" });
 
             return Ok(new { success = true, mensaje = "Archivo eliminado correctamente" });
+        }
+
+
+
+        [HttpPost("subir")]
+        public async Task<IActionResult> SubirArchivo(
+            [FromQuery] Guid usuarioId,
+            [FromQuery] Guid carpetaId,
+            IFormFile file)
+        {
+            try
+            {
+                if (file == null || file.Length == 0)
+                    return BadRequest(new { success = false, mensaje = "No se proporcionó ningún archivo" });
+
+                if (usuarioId == Guid.Empty)
+                    return BadRequest(new { success = false, mensaje = "El usuarioId es requerido" });
+
+                if (carpetaId == Guid.Empty)
+                    return BadRequest(new { success = false, mensaje = "El carpetaId es requerido" });
+
+                // Se valida/actualiza el espacio antes de subir el archivo 
+                await _authService.ActualizarEspacioOcupado(usuarioId, file.Length);
+
+
+                var uploadPath = Path.Combine(_webHostEnvironment.WebRootPath, "uploads", usuarioId.ToString());
+                Directory.CreateDirectory(uploadPath);
+
+                var nombreArchivo = $"{Guid.NewGuid()}_{file.FileName}";
+                var rutaCompleta = Path.Combine(uploadPath, nombreArchivo);
+
+                using (var stream = new FileStream(rutaCompleta, FileMode.Create))
+                {
+                    await file.CopyToAsync(stream);
+                }
+
+                var rutaWeb = $"/uploads/{usuarioId}/{nombreArchivo}";
+
+                var dto = new CrearArchivoDto
+                {
+                    UsuarioId = usuarioId,
+                    CarpetaId = carpetaId,
+                    Nombre = file.FileName,
+                    TipoArchivo = file.ContentType,
+                    Tamaño = file.Length,
+                    RutaArchivo = rutaWeb
+                };
+
+                var resultado = await _service.Crear(dto);
+                return Ok(new { success = true, data = resultado, mensaje = "Archivo subido correctamente" });
+            }
+            catch (InvalidOperationException ex)
+            {
+                return BadRequest(new { success = false, mensaje = ex.Message });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { success = false, mensaje = "Error al subir el archivo", detalle = ex.Message });
+            }
         }
     }
 }

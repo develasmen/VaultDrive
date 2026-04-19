@@ -48,5 +48,23 @@ namespace VaultDrive.LogicaDeNegocio.Servicios
         {
             return await _userManager.FindByEmailAsync(correo);
         }
+
+
+
+
+        public async Task<bool> ActualizarEspacioOcupado(Guid usuarioId, long bytesAgregados)
+        {
+            var usuario = await _userManager.FindByIdAsync(usuarioId.ToString());
+            if (usuario == null) return false;
+
+            var mbAgregados = bytesAgregados / (1024.0 * 1024.0);
+            usuario.EspacioOcupado += (long)Math.Ceiling(mbAgregados);
+
+            if (usuario.EspacioOcupado > usuario.EspacioTotal)
+                throw new InvalidOperationException("No hay espacio suficiente disponible");
+
+            await _userManager.UpdateAsync(usuario);
+            return true;
+        }
     }
 }

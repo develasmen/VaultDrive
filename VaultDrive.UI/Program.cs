@@ -78,6 +78,17 @@ builder.Services.AddAuthentication(options =>
 
 builder.Services.AddControllers();
 
+// Configuración para permitir archivos grandes (hasta 10 GB)
+builder.Services.Configure<Microsoft.AspNetCore.Http.Features.FormOptions>(options =>
+{
+    options.MultipartBodyLengthLimit = 10L * 1024 * 1024 * 1024; // 10 GB
+});
+
+builder.WebHost.ConfigureKestrel(options =>
+{
+    options.Limits.MaxRequestBodySize = 10L * 1024 * 1024 * 1024; // 10 GB
+});
+
 // --- 4. SWAGGER ---
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();

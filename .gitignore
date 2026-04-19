@@ -416,3 +416,6 @@ FodyWeavers.xsd
 *.msix
 *.msm
 *.msp
+
+#Se agrega al gitignore para no contaminar el repositorio 
+**/wwwroot/uploads/
