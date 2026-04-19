@@ -89,11 +89,31 @@ namespace VaultDrive.UI.Controllers
         [HttpDelete("{id}")]
         public async Task<IActionResult> Eliminar(Guid id)
         {
-            var exito = await _service.Eliminar(id);
-            if (!exito)
-                return NotFound(new { success = false, mensaje = "Archivo no encontrado" });
+            try
+            {
+                var archivo = await _service.GetById(id);
+                if (archivo == null)
+                    return NotFound(new { success = false, mensaje = "Archivo no encontrado" });
 
-            return Ok(new { success = true, mensaje = "Archivo eliminado correctamente" });
+                // Eliminar archivo físico del servidor
+                var rutaFisica = Path.Combine(_webHostEnvironment.WebRootPath, archivo.RutaArchivo.TrimStart('/').Replace('/', Path.DirectorySeparatorChar));
+                if (System.IO.File.Exists(rutaFisica))
+                    System.IO.File.Delete(rutaFisica);
+
+                // Eliminar registro en MongoDB
+                var exito = await _service.Eliminar(id);
+                if (!exito)
+                    return NotFound(new { success = false, mensaje = "Archivo no encontrado" });
+
+                // Liberar espacio del usuario
+                await _authService.LiberarEspacio(archivo.UsuarioId, archivo.Tamaño);
+
+                return Ok(new { success = true, mensaje = "Archivo eliminado correctamente" });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { success = false, mensaje = "Error al eliminar el archivo", detalle = ex.Message });
+            }
         }
 
 
@@ -119,7 +139,7 @@ namespace VaultDrive.UI.Controllers
                 await _authService.ActualizarEspacioOcupado(usuarioId, file.Length);
 
 
-                var uploadPath = Path.Combine(_webHostEnvironment.WebRootPath, "uploads", usuarioId.ToString());
+                var uploadPath = Path.Combine(_webHostEnvironment.WebRootPath, "uploads", usuarioId.ToString(), carpetaId.ToString());
                 Directory.CreateDirectory(uploadPath);
 
                 var nombreArchivo = $"{Guid.NewGuid()}_{file.FileName}";

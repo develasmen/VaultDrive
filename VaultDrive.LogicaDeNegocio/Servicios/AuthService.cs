@@ -66,5 +66,20 @@ namespace VaultDrive.LogicaDeNegocio.Servicios
             await _userManager.UpdateAsync(usuario);
             return true;
         }
+
+        public async Task<bool> LiberarEspacio(Guid usuarioId, long bytesLiberados)
+        {
+            var usuario = await _userManager.FindByIdAsync(usuarioId.ToString());
+            if (usuario == null) return false;
+
+            var mbLiberados = bytesLiberados / (1024.0 * 1024.0);
+            usuario.EspacioOcupado -= (long)Math.Ceiling(mbLiberados);
+
+            if (usuario.EspacioOcupado < 0)
+                usuario.EspacioOcupado = 0;
+
+            await _userManager.UpdateAsync(usuario);
+            return true;
+        }
     }
 }
