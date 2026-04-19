@@ -27,8 +27,10 @@ builder.Services.AddScoped<RegistroActividadService>();
 builder.Services.AddScoped<IEtiquetaRepository, EtiquetaRepository>();
 builder.Services.AddScoped<IArchivoEtiquetaRepository, ArchivoEtiquetaRepository>();
 builder.Services.AddScoped<EtiquetaService>();
+builder.Services.AddScoped<IArchivoRepository, ArchivoRepository>();
 builder.Services.AddScoped<IArchivoPersonalizadoRepository, ArchivoPersonalizadoRepository>();
 builder.Services.AddScoped<IVersionArchivoRepository, VersionArchivoRepository>();
+builder.Services.AddScoped<ArchivoService>();
 builder.Services.AddScoped<ArchivoPersonalizadoService>();
 builder.Services.AddScoped<VersionArchivoService>();
 
