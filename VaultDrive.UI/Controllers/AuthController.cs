@@ -37,6 +37,9 @@ namespace VaultDrive.UI.Controllers
             if (resultado.Succeeded)
             {
                 var usuario = await _authService.ObtenerUsuarioPorCorreo(dto.Correo);
+                if (usuario is null)
+                    return Unauthorized(new { mensaje = "No se encontro el usuario" });
+
                 return Ok(new 
                 { 
                     mensaje = "Login exitoso",
