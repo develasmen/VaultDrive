@@ -29,6 +29,13 @@ namespace VaultDrive.UI.Controllers
             }
         }
 
+        [HttpPost("bulk")]
+        public async Task<IActionResult> GetBulk([FromBody] List<Guid> archivoIds)
+        {
+            var resultado = await _service.GetByArchivoIds(archivoIds);
+            return Ok(new { success = true, data = resultado });
+        }
+
         [HttpGet("archivo/{archivoId}")]
         public async Task<IActionResult> GetByArchivoId(Guid archivoId)
         {

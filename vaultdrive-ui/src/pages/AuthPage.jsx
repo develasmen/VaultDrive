@@ -1,4 +1,4 @@
-import { useState } from 'react'
+﻿import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { login, registro } from '../lib/api'
 import { saveSession } from '../lib/session'
@@ -36,7 +36,7 @@ export function AuthPage({ mode, onAuthenticated }) {
           correo: form.correo,
           contrasena: form.contrasena,
         })
-        setSuccess('Cuenta creada. Ahora puedes iniciar sesion.')
+        setSuccess('Cuenta creada. Redirigiendo...')
         setTimeout(() => navigate('/login'), 700)
       } else {
         const response = await login({
@@ -52,7 +52,6 @@ export function AuthPage({ mode, onAuthenticated }) {
 
         saveSession(sessionUser)
         onAuthenticated?.(sessionUser)
-
         navigate('/app')
       }
     } catch (requestError) {
@@ -63,63 +62,66 @@ export function AuthPage({ mode, onAuthenticated }) {
   }
 
   return (
-    <main className="mx-auto flex min-h-screen w-full max-w-6xl flex-col items-center justify-center px-4 py-8">
-      <section className="glass-card fade-up grid w-full overflow-hidden rounded-3xl md:grid-cols-[1.2fr_1fr]">
-        <article className="relative hidden min-h-[420px] flex-col justify-between bg-[linear-gradient(150deg,#0f7a52,#0b5e40)] p-8 text-white md:flex">
-          <div>
-            <p className="text-xs uppercase tracking-[0.2em] text-emerald-100/80">VaultDrive</p>
-            <h1 className="title-font mt-3 text-4xl font-semibold leading-tight">
-              Tus archivos seguros, organizados y listos para colaborar.
-            </h1>
+    <div className="auth-bg">
+      <div className="w-full max-w-sm fade-up">
+        {/* Logo */}
+        <div className="flex flex-col items-center mb-8">
+          <div className="logo-mark mb-3" style={{ width: 44, height: 40 }} aria-hidden="true">
+            <span className="logo-mark__layer logo-mark__layer--bottom" style={{ width: 40, height: 20, borderRadius: 8 }} />
+            <span className="logo-mark__layer logo-mark__layer--top" style={{ width: 40, height: 20, borderRadius: 8 }} />
           </div>
+          <h1 className="title-font text-2xl font-semibold text-(--ink) tracking-tight">VaultDrive</h1>
+          <p className="mt-1 text-sm text-(--ink-soft)">Tu espacio de archivos seguro</p>
+        </div>
 
-          <p className="max-w-md text-sm text-emerald-100/90">
-            Gestiona carpetas, etiquetas y favoritos con una experiencia fluida.
-          </p>
-
-          <span className="absolute -right-14 -top-12 h-40 w-40 rounded-full bg-[var(--accent)]/40 blur-2xl" />
-          <span className="absolute -bottom-14 left-14 h-44 w-44 rounded-full bg-white/20 blur-2xl" />
-        </article>
-
-        <article className="bg-[var(--paper)] p-8 md:p-10">
-          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[var(--ink-soft)]">
+        {/* Card */}
+        <div className="card p-8">
+          <h2 className="text-lg font-semibold text-(--ink) mb-1">
             {isRegister ? 'Crear cuenta' : 'Bienvenido de nuevo'}
-          </p>
-          <h2 className="title-font mt-1 text-3xl font-semibold text-[var(--ink)]">
-            {isRegister ? 'Registro de usuario' : 'Iniciar sesion'}
           </h2>
+          <p className="text-sm text-(--ink-soft) mb-6">
+            {isRegister
+              ? 'Completa los datos para registrarte'
+              : 'Ingresa tus credenciales para continuar'}
+          </p>
 
-          <form onSubmit={handleSubmit} className="mt-8 space-y-4">
+          <form onSubmit={handleSubmit} className="space-y-4">
             {isRegister && (
-              <label className="block">
-                <span className="mb-1 block text-sm font-semibold text-[var(--ink-soft)]">Nombre</span>
+              <div>
+                <label className="block text-[13px] font-medium text-(--ink-soft) mb-1.5">
+                  Nombre
+                </label>
                 <input
                   name="nombre"
                   type="text"
                   required
                   value={form.nombre}
                   onChange={handleChange}
-                  className="w-full rounded-xl border border-[var(--line)] bg-white px-4 py-3 text-sm outline-none transition focus:border-[var(--brand)]"
-                  placeholder="Tu nombre"
+                  className="field"
+                  placeholder="Tu nombre completo"
                 />
-              </label>
+              </div>
             )}
 
-            <label className="block">
-              <span className="mb-1 block text-sm font-semibold text-[var(--ink-soft)]">Correo</span>
+            <div>
+              <label className="block text-[13px] font-medium text-(--ink-soft) mb-1.5">
+                Correo electronico
+              </label>
               <input
                 name="correo"
                 type="email"
                 required
                 value={form.correo}
                 onChange={handleChange}
-                className="w-full rounded-xl border border-[var(--line)] bg-white px-4 py-3 text-sm outline-none transition focus:border-[var(--brand)]"
+                className="field"
                 placeholder="correo@dominio.com"
               />
-            </label>
+            </div>
 
-            <label className="block">
-              <span className="mb-1 block text-sm font-semibold text-[var(--ink-soft)]">Contrasena</span>
+            <div>
+              <label className="block text-[13px] font-medium text-(--ink-soft) mb-1.5">
+                Contrasena
+              </label>
               <input
                 name="contrasena"
                 type="password"
@@ -127,38 +129,43 @@ export function AuthPage({ mode, onAuthenticated }) {
                 minLength={6}
                 value={form.contrasena}
                 onChange={handleChange}
-                className="w-full rounded-xl border border-[var(--line)] bg-white px-4 py-3 text-sm outline-none transition focus:border-[var(--brand)]"
+                className="field"
                 placeholder="Minimo 6 caracteres"
               />
-            </label>
+            </div>
 
             {error && (
-              <p className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>
+              <div className="rounded-lg border border-(--danger-light) bg-(--danger-light) px-3 py-2.5 text-sm text-(--danger-text)">
+                {error}
+              </div>
             )}
-
             {success && (
-              <p className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-700">
+              <div className="rounded-lg border border-(--brand-light) bg-(--brand-light) px-3 py-2.5 text-sm text-(--brand-text)">
                 {success}
-              </p>
+              </div>
             )}
 
             <button
               type="submit"
               disabled={isLoading}
-              className="mt-2 w-full rounded-xl bg-[var(--brand)] px-4 py-3 text-sm font-semibold text-white transition hover:bg-[var(--brand-strong)] disabled:cursor-not-allowed disabled:opacity-70"
+              className="mt-1 w-full rounded-lg bg-(--brand) px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-(--brand-strong) disabled:cursor-not-allowed disabled:opacity-60"
             >
-              {isLoading ? 'Procesando...' : isRegister ? 'Crear cuenta' : 'Entrar'}
+              {isLoading ? 'Procesando...' : isRegister ? 'Crear cuenta' : 'Iniciar sesion'}
             </button>
           </form>
+        </div>
 
-          <p className="mt-5 text-sm text-[var(--ink-soft)]">
-            {isRegister ? 'Ya tienes cuenta?' : 'Aun no tienes cuenta?'}{' '}
-            <Link to={isRegister ? '/login' : '/register'} className="font-semibold text-[var(--brand)] hover:underline">
-              {isRegister ? 'Inicia sesion' : 'Registrate'}
-            </Link>
-          </p>
-        </article>
-      </section>
-    </main>
+        {/* Toggle */}
+        <p className="mt-4 text-center text-sm text-(--ink-soft)">
+          {isRegister ? 'Ya tienes cuenta? ' : 'No tienes cuenta? '}
+          <Link
+            to={isRegister ? '/login' : '/register'}
+            className="font-semibold text-(--brand) hover:text-(--brand-strong) transition-colors"
+          >
+            {isRegister ? 'Inicia sesion' : 'Registrate'}
+          </Link>
+        </p>
+      </div>
+    </div>
   )
 }

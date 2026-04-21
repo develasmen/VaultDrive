@@ -44,6 +44,13 @@ namespace VaultDrive.LogicaDeNegocio.Servicios
             return await _repository.GetByArchivoId(archivoId);
         }
 
+        public async Task<List<ArchivoPersonalizado>> GetByArchivoIds(List<Guid> archivoIds)
+        {
+            if (archivoIds == null || archivoIds.Count == 0)
+                return new List<ArchivoPersonalizado>();
+            return await _repository.GetByUsuarioArchivos(archivoIds);
+        }
+
         public async Task<ArchivoPersonalizado> GetById(Guid id)
         {
             return await _repository.GetById(id);

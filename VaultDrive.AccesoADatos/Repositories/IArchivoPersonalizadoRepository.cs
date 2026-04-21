@@ -7,6 +7,7 @@ namespace VaultDrive.Abstracciones.Repositories
         Task Crear(ArchivoPersonalizado archivo);
         Task<ArchivoPersonalizado> GetById(Guid id);
         Task<ArchivoPersonalizado> GetByArchivoId(Guid archivoId);
+        Task<List<ArchivoPersonalizado>> GetByUsuarioArchivos(List<Guid> archivoIds);
         Task<bool> Actualizar(ArchivoPersonalizado archivo);
         Task<bool> Eliminar(Guid id);
     }

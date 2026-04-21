@@ -1,55 +1,126 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
   actualizarComentario,
+  actualizarConfiguracion,
   actualizarEtiqueta,
+  actualizarPersonalizacion,
   agregarFavorito,
   asignarEtiqueta,
   crearComentario,
   crearCarpeta,
   crearEtiqueta,
+  crearPersonalizacion,
+  eliminarArchivo,
+  eliminarCarpeta,
   eliminarComentario,
   eliminarEtiqueta,
+  eliminarPersonalizacion,
   getArchivoById,
+  getArchivosByCarpeta,
   getArchivosByUsuario,
   getCarpetasByUsuario,
   getComentariosByArchivo,
+  getConfiguracion,
   getEtiquetasByUsuario,
   getFavoritosByUsuario,
   getHistorialVersiones,
+  getPersonalizacion,
+  getPersonalizacionesBulk,
+  getRegistroActividad,
   logout,
   quitarFavorito,
   subirArchivoConProgreso,
 } from '../lib/api'
 import { clearSession } from '../lib/session'
-import { StatCard } from '../components/StatCard'
-import { TopBar } from '../components/TopBar'
+import { Sidebar } from '../components/Sidebar'
+import {
+  ChevronLeftIcon,
+  CheckIcon,
+  EditIcon,
+  FileIcon,
+  FolderIcon,
+  MoonIcon,
+  PaintbrushIcon,
+  PlusIcon,
+  SettingsIcon,
+  StarIcon,
+  SunIcon,
+  TrashIcon,
+  UploadIcon,
+  XIcon,
+} from '../components/Icons'
 
+// ---------- helpers ----------
+function formatSize(archivo) {
+  const bytes = archivo.tamano ?? archivo.tamaño ?? 0
+  if (bytes / 1024 > 1024) return `${(bytes / 1024 / 1024).toFixed(1)} MB`
+  return `${Math.max(1, Math.floor(bytes / 1024))} KB`
+}
+
+function SectionHeader({ title, subtitle }) {
+  return (
+    <div className="mb-5">
+      <h2 className="title-font text-xl font-semibold text-(--ink)">{title}</h2>
+      {subtitle && <p className="mt-0.5 text-sm text-(--ink-soft)">{subtitle}</p>}
+    </div>
+  )
+}
+
+function EmptyState({ message }) {
+  return <p className="py-4 text-sm text-(--ink-soft)">{message}</p>
+}
+
+function ActionBar({ error, message, onDismiss }) {
+  if (!error && !message) return null
+  const isError = Boolean(error)
+  return (
+    <div
+      className={`mb-4 flex items-center justify-between rounded-lg border px-4 py-3 text-sm ${
+        isError
+          ? 'border-red-200 bg-(--danger-light) text-(--danger-text)'
+          : 'border-emerald-200 bg-(--brand-light) text-(--brand-text)'
+      }`}
+    >
+      <span>{error || message}</span>
+      <button type="button" onClick={onDismiss} className="ml-3 opacity-60 hover:opacity-100">
+        <XIcon />
+      </button>
+    </div>
+  )
+}
+
+// ---------- main component ----------
 export function DashboardPage({ user, onSessionClosed }) {
-  const [data, setData] = useState({
-    archivos: [],
-    carpetas: [],
-    etiquetas: [],
-    favoritos: [],
-  })
+  const [data, setData] = useState({ archivos: [], carpetas: [], etiquetas: [], favoritos: [] })
   const [isLoading, setIsLoading] = useState(true)
-  const [isDetailLoading, setIsDetailLoading] = useState(false)
   const [error, setError] = useState('')
   const [actionMessage, setActionMessage] = useState('')
 
-  const [folderName, setFolderName] = useState('')
-  const [coverUrl, setCoverUrl] = useState('')
+  const [activeSection, setActiveSection] = useState('overview')
 
+  // Folder drill-down
+  const [openFolder, setOpenFolder] = useState(null)
+  const [folderFiles, setFolderFiles] = useState([])
+  const [isFolderLoading, setIsFolderLoading] = useState(false)
+
+  // Upload
   const [selectedFolderId, setSelectedFolderId] = useState('')
   const [selectedFile, setSelectedFile] = useState(null)
   const [isDragging, setIsDragging] = useState(false)
   const [uploadProgress, setUploadProgress] = useState(0)
 
+  // New folder
+  const [folderName, setFolderName] = useState('')
+  const [coverUrl, setCoverUrl] = useState('')
+
+  // Tags
   const [newTagName, setNewTagName] = useState('')
   const [selectedTagId, setSelectedTagId] = useState('')
   const [selectedTagFileId, setSelectedTagFileId] = useState('')
   const [editingTagId, setEditingTagId] = useState('')
   const [editingTagName, setEditingTagName] = useState('')
 
+  // Comments
   const [selectedCommentFileId, setSelectedCommentFileId] = useState('')
   const [commentText, setCommentText] = useState('')
   const [comments, setComments] = useState([])
@@ -57,756 +128,1018 @@ export function DashboardPage({ user, onSessionClosed }) {
   const [editingCommentId, setEditingCommentId] = useState('')
   const [editingCommentText, setEditingCommentText] = useState('')
 
+  // Detail / versions
   const [selectedDetailFileId, setSelectedDetailFileId] = useState('')
   const [selectedDetailFile, setSelectedDetailFile] = useState(null)
   const [versionHistory, setVersionHistory] = useState([])
+  const [isDetailLoading, setIsDetailLoading] = useState(false)
+
+  // Activity
+  const [activity, setActivity] = useState([])
+  const [isActivityLoading, setIsActivityLoading] = useState(false)
+
+  // Theme (ConfiguracionUsuario)
+  const [theme, setTheme] = useState('Claro')
+
+  // ArchivoPersonalizado
+  const [customFileId, setCustomFileId] = useState('')
+  const [customData, setCustomData] = useState(null)
+  const [isCustomLoading, setIsCustomLoading] = useState(false)
+  const [customForm, setCustomForm] = useState({ imagenPortada: '', colorTexto: '#000000', fuente: 'Arial' })
+  // Map archivoId → personalizacion para aplicar en el listado
+  const [personalizacionesMap, setPersonalizacionesMap] = useState({})
+
+  // ---------- data loading ----------
+  const refreshPersonalizaciones = useCallback(async (archivos) => {
+    if (!archivos || archivos.length === 0) { setPersonalizacionesMap({}); return }
+    try {
+      const ids = archivos.map((a) => a.id)
+      const res = await getPersonalizacionesBulk(ids)
+      const list = res?.data ?? []
+      const map = {}
+      list.forEach((p) => { map[p.archivoId] = p })
+      setPersonalizacionesMap(map)
+    } catch {
+      setPersonalizacionesMap({})
+    }
+  }, [])
 
   const refreshData = useCallback(async () => {
-    const [archivosResponse, carpetasResponse, etiquetasResponse, favoritosResponse] = await Promise.all([
+    const [archivosRes, carpetasRes, etiquetasRes, favoritosRes] = await Promise.all([
       getArchivosByUsuario(user.id),
       getCarpetasByUsuario(user.id),
       getEtiquetasByUsuario(user.id),
       getFavoritosByUsuario(user.id),
     ])
-
+    const archivos = archivosRes?.data ?? []
     setData({
-      archivos: archivosResponse?.data ?? [],
-      carpetas: Array.isArray(carpetasResponse) ? carpetasResponse : [],
-      etiquetas: etiquetasResponse?.data ?? [],
-      favoritos: favoritosResponse?.data ?? [],
+      archivos,
+      carpetas: Array.isArray(carpetasRes) ? carpetasRes : [],
+      etiquetas: etiquetasRes?.data ?? [],
+      favoritos: favoritosRes?.data ?? [],
     })
-  }, [user.id])
+    refreshPersonalizaciones(archivos)
+  }, [user.id, refreshPersonalizaciones])
 
   useEffect(() => {
-    let isMounted = true
-
-    async function loadData() {
-      setError('')
-      setIsLoading(true)
-      try {
-        await refreshData()
-      } catch (requestError) {
-        if (!isMounted) return
-        setError(requestError.message)
-      } finally {
-        if (isMounted) setIsLoading(false)
-      }
-    }
-
-    loadData()
-
-    return () => {
-      isMounted = false
-    }
+    let mounted = true
+    setIsLoading(true)
+    refreshData()
+      .catch((err) => { if (mounted) setError(err.message) })
+      .finally(() => { if (mounted) setIsLoading(false) })
+    return () => { mounted = false }
   }, [refreshData])
 
   useEffect(() => {
     if (!selectedCommentFileId) return
-
     let active = true
-
-    async function loadComments() {
-      setIsCommentsLoading(true)
-      try {
-        const response = await getComentariosByArchivo(selectedCommentFileId)
-        if (!active) return
-        setComments(response?.data ?? [])
-      } catch {
-        if (!active) return
-        setComments([])
-      } finally {
-        if (active) setIsCommentsLoading(false)
-      }
-    }
-
-    loadComments()
-
-    return () => {
-      active = false
-    }
+    setIsCommentsLoading(true)
+    getComentariosByArchivo(selectedCommentFileId)
+      .then((res) => { if (active) setComments(res?.data ?? []) })
+      .catch(() => { if (active) setComments([]) })
+      .finally(() => { if (active) setIsCommentsLoading(false) })
+    return () => { active = false }
   }, [selectedCommentFileId])
+
+  // ---------- derived ----------
+  const favoritesSet = useMemo(
+    () => new Set(data.favoritos.map((f) => f.archivoId)),
+    [data.favoritos],
+  )
 
   const stats = useMemo(
     () => [
-      { title: 'Archivos', value: data.archivos.length, hint: 'Total de archivos cargados' },
-      { title: 'Carpetas', value: data.carpetas.length, hint: 'Estructuras activas' },
-      { title: 'Etiquetas', value: data.etiquetas.length, hint: 'Clasificacion disponible' },
-      { title: 'Favoritos', value: data.favoritos.length, hint: 'Accesos rapidos marcados' },
+      { title: 'Archivos',  value: data.archivos.length,  color: 'text-(--brand)' },
+      { title: 'Carpetas',  value: data.carpetas.length,  color: 'text-blue-500' },
+      { title: 'Etiquetas', value: data.etiquetas.length, color: 'text-purple-500' },
+      { title: 'Favoritos', value: data.favoritos.length, color: 'text-amber-500' },
     ],
     [data],
   )
 
-  const favoritesSet = useMemo(
-    () => new Set(data.favoritos.map((favorito) => favorito.archivoId)),
-    [data.favoritos],
-  )
-
-  const visibleComments = selectedCommentFileId ? comments : []
-
-  const formatFileSize = (archivo) => {
-    const bytes = archivo.tamano ?? archivo.tamaño ?? 0
-    if (bytes / 1024 > 1024) return `${(bytes / 1024 / 1024).toFixed(1)} MB`
-    return `${Math.max(1, Math.floor(bytes / 1024))} KB`
-  }
-
-  const resetMessages = () => {
-    setError('')
-    setActionMessage('')
-  }
+  // ---------- handlers ----------
+  const resetMessages = () => { setError(''); setActionMessage('') }
 
   const handleLogout = async () => {
-    try {
-      await logout()
-    } catch {
-      // Si falla el endpoint de logout, limpiamos la sesion local igualmente.
-    }
-
+    try { await logout() } catch { /* swallow */ }
     clearSession()
     onSessionClosed()
   }
 
-  const handleCreateFolder = async (event) => {
-    event.preventDefault()
+  const handleCreateFolder = async (e) => {
+    e.preventDefault()
     resetMessages()
-
     try {
-      await crearCarpeta({
-        usuarioId: user.id,
-        nombre: folderName,
-        portadaImg: coverUrl,
-        carpetaPadre: null,
-      })
-
+      await crearCarpeta({ usuarioId: user.id, nombre: folderName, portadaImg: coverUrl, carpetaPadre: null })
       await refreshData()
       setFolderName('')
       setCoverUrl('')
       setActionMessage('Carpeta creada correctamente.')
-    } catch (requestError) {
-      setError(requestError.message)
-    }
+    } catch (err) { setError(err.message) }
   }
 
-  const handleDragOver = (event) => {
-    event.preventDefault()
-    setIsDragging(true)
-  }
-
-  const handleDragLeave = (event) => {
-    event.preventDefault()
-    setIsDragging(false)
-  }
-
-  const handleDrop = (event) => {
-    event.preventDefault()
-    setIsDragging(false)
-
-    const droppedFile = event.dataTransfer.files?.[0]
-    if (droppedFile) {
-      setSelectedFile(droppedFile)
-    }
-  }
-
-  const performUpload = async () => {
-    if (!selectedFile || !selectedFolderId) {
-      setError('Selecciona carpeta y archivo para subir.')
-      return
-    }
-
-    setUploadProgress(0)
-
-    await subirArchivoConProgreso({
-      usuarioId: user.id,
-      carpetaId: selectedFolderId,
-      file: selectedFile,
-      onProgress: (percent) => setUploadProgress(percent),
-    })
-
-    await refreshData()
-    setSelectedFolderId('')
-    setSelectedFile(null)
-    setUploadProgress(0)
-    setActionMessage('Archivo subido correctamente.')
-  }
-
-  const handleUpload = async (event) => {
-    event.preventDefault()
+  const handleDeleteFolder = async (id) => {
     resetMessages()
-
     try {
-      await performUpload()
-    } catch (requestError) {
-      setError(requestError.message)
-      setUploadProgress(0)
+      await eliminarCarpeta(id)
+      await refreshData()
+      if (openFolder?.id === id) setOpenFolder(null)
+      setActionMessage('Carpeta eliminada.')
+    } catch (err) { setError(err.message) }
+  }
+
+  const handleOpenFolder = async (carpeta) => {
+    setOpenFolder(carpeta)
+    setIsFolderLoading(true)
+    try {
+      const res = await getArchivosByCarpeta(carpeta.id)
+      setFolderFiles(res?.data ?? [])
+    } catch {
+      setFolderFiles([])
+    } finally {
+      setIsFolderLoading(false)
     }
   }
 
-  const handleCreateTag = async (event) => {
-    event.preventDefault()
-    resetMessages()
+  const handleDragOver = (e) => { e.preventDefault(); setIsDragging(true) }
+  const handleDragLeave = (e) => { e.preventDefault(); setIsDragging(false) }
+  const handleDrop = (e) => {
+    e.preventDefault()
+    setIsDragging(false)
+    const f = e.dataTransfer.files?.[0]
+    if (f) setSelectedFile(f)
+  }
 
+  const handleUpload = async (e) => {
+    e.preventDefault()
+    resetMessages()
+    if (!selectedFile || !selectedFolderId) { setError('Selecciona carpeta y archivo.'); return }
+    setUploadProgress(0)
     try {
-      await crearEtiqueta({
+      await subirArchivoConProgreso({
         usuarioId: user.id,
-        nombreEtiqueta: newTagName,
+        carpetaId: selectedFolderId,
+        file: selectedFile,
+        onProgress: setUploadProgress,
       })
       await refreshData()
-      setNewTagName('')
-      setActionMessage('Etiqueta creada correctamente.')
-    } catch (requestError) {
-      setError(requestError.message)
-    }
+      setSelectedFolderId('')
+      setSelectedFile(null)
+      setUploadProgress(0)
+      setActionMessage('Archivo subido correctamente.')
+    } catch (err) { setError(err.message); setUploadProgress(0) }
   }
 
-  const handleAssignTag = async (event) => {
-    event.preventDefault()
+  const handleDeleteFile = async (id) => {
     resetMessages()
-
-    if (!selectedTagId || !selectedTagFileId) {
-      setError('Selecciona etiqueta y archivo para asignar.')
-      return
-    }
-
     try {
-      await asignarEtiqueta({ archivoId: selectedTagFileId, etiquetaId: selectedTagId })
-      setActionMessage('Etiqueta asignada al archivo.')
-    } catch (requestError) {
-      setError(requestError.message)
-    }
-  }
-
-  const handleStartEditTag = (etiqueta) => {
-    setEditingTagId(etiqueta.id)
-    setEditingTagName(etiqueta.nombreEtiqueta)
-  }
-
-  const handleSaveEditTag = async (event) => {
-    event.preventDefault()
-    resetMessages()
-
-    if (!editingTagId) return
-
-    try {
-      await actualizarEtiqueta(editingTagId, { nombreEtiqueta: editingTagName })
+      await eliminarArchivo(id)
       await refreshData()
-      setEditingTagId('')
-      setEditingTagName('')
-      setActionMessage('Etiqueta actualizada correctamente.')
-    } catch (requestError) {
-      setError(requestError.message)
-    }
-  }
-
-  const handleDeleteTag = async (id) => {
-    resetMessages()
-
-    try {
-      await eliminarEtiqueta(id)
-      await refreshData()
-      if (editingTagId === id) {
-        setEditingTagId('')
-        setEditingTagName('')
+      if (openFolder) {
+        const res = await getArchivosByCarpeta(openFolder.id)
+        setFolderFiles(res?.data ?? [])
       }
-      setActionMessage('Etiqueta eliminada correctamente.')
-    } catch (requestError) {
-      setError(requestError.message)
-    }
+      if (selectedDetailFileId === id) { setSelectedDetailFile(null); setSelectedDetailFileId('') }
+      setActionMessage('Archivo eliminado.')
+    } catch (err) { setError(err.message) }
   }
 
   const handleToggleFavorite = async (archivoId) => {
     resetMessages()
-
     try {
       if (favoritesSet.has(archivoId)) {
         await quitarFavorito({ usuarioId: user.id, archivoId })
-        setActionMessage('Archivo removido de favoritos.')
+        setActionMessage('Removido de favoritos.')
       } else {
         await agregarFavorito({ usuarioId: user.id, archivoId })
-        setActionMessage('Archivo agregado a favoritos.')
+        setActionMessage('Añadido a favoritos.')
       }
-
       await refreshData()
-    } catch (requestError) {
-      setError(requestError.message)
-    }
-  }
-
-  const handleCreateComment = async (event) => {
-    event.preventDefault()
-    resetMessages()
-
-    if (!selectedCommentFileId || !commentText.trim()) {
-      setError('Selecciona archivo y escribe un comentario.')
-      return
-    }
-
-    try {
-      await crearComentario({
-        usuarioId: user.id,
-        archivoId: selectedCommentFileId,
-        comentario: commentText.trim(),
-      })
-
-      const response = await getComentariosByArchivo(selectedCommentFileId)
-      setComments(response?.data ?? [])
-      setCommentText('')
-      setActionMessage('Comentario publicado.')
-    } catch (requestError) {
-      setError(requestError.message)
-    }
-  }
-
-  const handleStartEditComment = (comentario) => {
-    setEditingCommentId(comentario.id)
-    setEditingCommentText(comentario.comentario)
-  }
-
-  const handleSaveEditComment = async (event) => {
-    event.preventDefault()
-    resetMessages()
-
-    if (!editingCommentId || !selectedCommentFileId) return
-
-    try {
-      await actualizarComentario(editingCommentId, { comentario: editingCommentText })
-      const response = await getComentariosByArchivo(selectedCommentFileId)
-      setComments(response?.data ?? [])
-      setEditingCommentId('')
-      setEditingCommentText('')
-      setActionMessage('Comentario actualizado correctamente.')
-    } catch (requestError) {
-      setError(requestError.message)
-    }
-  }
-
-  const handleDeleteComment = async (id) => {
-    resetMessages()
-
-    try {
-      await eliminarComentario(id)
-      if (selectedCommentFileId) {
-        const response = await getComentariosByArchivo(selectedCommentFileId)
-        setComments(response?.data ?? [])
-      }
-      if (editingCommentId === id) {
-        setEditingCommentId('')
-        setEditingCommentText('')
-      }
-      setActionMessage('Comentario eliminado correctamente.')
-    } catch (requestError) {
-      setError(requestError.message)
-    }
+    } catch (err) { setError(err.message) }
   }
 
   const handleSelectDetailFile = async (fileId) => {
     resetMessages()
     setSelectedDetailFileId(fileId)
     setIsDetailLoading(true)
-
     try {
-      const [archivoResponse, historialResponse] = await Promise.all([
-        getArchivoById(fileId),
-        getHistorialVersiones(fileId),
-      ])
-
-      setSelectedDetailFile(archivoResponse?.data ?? null)
-      setVersionHistory(historialResponse?.data ?? [])
-    } catch (requestError) {
+      const [archivoRes, historialRes] = await Promise.all([getArchivoById(fileId), getHistorialVersiones(fileId)])
+      setSelectedDetailFile(archivoRes?.data ?? null)
+      setVersionHistory(historialRes?.data ?? [])
+    } catch (err) {
       setSelectedDetailFile(null)
       setVersionHistory([])
-      setError(requestError.message)
+      setError(err.message)
+    } finally { setIsDetailLoading(false) }
+  }
+
+  const handleCreateTag = async (e) => {
+    e.preventDefault()
+    resetMessages()
+    try {
+      await crearEtiqueta({ usuarioId: user.id, nombreEtiqueta: newTagName })
+      await refreshData()
+      setNewTagName('')
+      setActionMessage('Etiqueta creada.')
+    } catch (err) { setError(err.message) }
+  }
+
+  const handleAssignTag = async (e) => {
+    e.preventDefault()
+    resetMessages()
+    if (!selectedTagId || !selectedTagFileId) { setError('Selecciona etiqueta y archivo.'); return }
+    try {
+      await asignarEtiqueta({ archivoId: selectedTagFileId, etiquetaId: selectedTagId })
+      setActionMessage('Etiqueta asignada.')
+    } catch (err) { setError(err.message) }
+  }
+
+  const handleSaveEditTag = async (e) => {
+    e.preventDefault()
+    resetMessages()
+    if (!editingTagId) return
+    try {
+      await actualizarEtiqueta(editingTagId, { nombreEtiqueta: editingTagName })
+      await refreshData()
+      setEditingTagId('')
+      setEditingTagName('')
+      setActionMessage('Etiqueta actualizada.')
+    } catch (err) { setError(err.message) }
+  }
+
+  const handleDeleteTag = async (id) => {
+    resetMessages()
+    try {
+      await eliminarEtiqueta(id)
+      await refreshData()
+      if (editingTagId === id) { setEditingTagId(''); setEditingTagName('') }
+      setActionMessage('Etiqueta eliminada.')
+    } catch (err) { setError(err.message) }
+  }
+
+  const handleCreateComment = async (e) => {
+    e.preventDefault()
+    resetMessages()
+    if (!selectedCommentFileId || !commentText.trim()) { setError('Selecciona archivo y escribe un comentario.'); return }
+    try {
+      await crearComentario({ usuarioId: user.id, archivoId: selectedCommentFileId, comentario: commentText.trim() })
+      const res = await getComentariosByArchivo(selectedCommentFileId)
+      setComments(res?.data ?? [])
+      setCommentText('')
+      setActionMessage('Comentario publicado.')
+    } catch (err) { setError(err.message) }
+  }
+
+  const handleSaveEditComment = async (e) => {
+    e.preventDefault()
+    resetMessages()
+    if (!editingCommentId) return
+    try {
+      await actualizarComentario(editingCommentId, { comentario: editingCommentText })
+      const res = await getComentariosByArchivo(selectedCommentFileId)
+      setComments(res?.data ?? [])
+      setEditingCommentId('')
+      setEditingCommentText('')
+      setActionMessage('Comentario actualizado.')
+    } catch (err) { setError(err.message) }
+  }
+
+  const handleDeleteComment = async (id) => {
+    resetMessages()
+    try {
+      await eliminarComentario(id)
+      if (selectedCommentFileId) {
+        const res = await getComentariosByArchivo(selectedCommentFileId)
+        setComments(res?.data ?? [])
+      }
+      if (editingCommentId === id) { setEditingCommentId(''); setEditingCommentText('') }
+      setActionMessage('Comentario eliminado.')
+    } catch (err) { setError(err.message) }
+  }
+
+  const handleLoadActivity = useCallback(async () => {
+    setIsActivityLoading(true)
+    try {
+      const res = await getRegistroActividad(user.id)
+      setActivity(res?.data ?? [])
+    } catch {
+      setActivity([])
     } finally {
-      setIsDetailLoading(false)
+      setIsActivityLoading(false)
+    }
+  }, [user.id])
+
+  useEffect(() => {
+    if (activeSection === 'activity') handleLoadActivity()
+  }, [activeSection, handleLoadActivity])
+
+  // Load user config (theme) on mount
+  useEffect(() => {
+    let mounted = true
+    getConfiguracion(user.id)
+      .then((res) => { if (mounted && res?.data?.tema) setTheme(res.data.tema) })
+      .catch(() => {})
+    return () => { mounted = false }
+  }, [user.id])
+
+  // Apply dark mode to <html>
+  useEffect(() => {
+    document.documentElement.classList.toggle('dark', theme === 'Oscuro')
+  }, [theme])
+
+  const handleToggleTheme = async () => {
+    const next = theme === 'Claro' ? 'Oscuro' : 'Claro'
+    setTheme(next)
+    try { await actualizarConfiguracion(user.id, { tema: next }) } catch { /* swallow */ }
+  }
+
+  const handleLoadCustom = async (archivoId) => {
+    if (!archivoId) return
+    setCustomFileId(archivoId)
+    setIsCustomLoading(true)
+    setCustomData(null)
+    try {
+      const res = await getPersonalizacion(archivoId)
+      if (res?.data) {
+        setCustomData(res.data)
+        setCustomForm({
+          imagenPortada: res.data.imagenPortada ?? '',
+          colorTexto: res.data.colorTexto ?? '#000000',
+          fuente: res.data.fuente ?? 'Arial',
+        })
+      } else {
+        setCustomForm({ imagenPortada: '', colorTexto: '#000000', fuente: 'Arial' })
+      }
+    } catch {
+      setCustomForm({ imagenPortada: '', colorTexto: '#000000', fuente: 'Arial' })
+    } finally {
+      setIsCustomLoading(false)
     }
   }
 
-  return (
-    <main className="mx-auto flex min-h-screen w-full max-w-6xl flex-col gap-6 px-4 py-7 md:px-6">
-      <TopBar user={user} onLogout={handleLogout} />
+  const handleSaveCustom = async (e) => {
+    e.preventDefault()
+    resetMessages()
+    if (!customFileId) { setError('Selecciona un archivo primero.'); return }
+    try {
+      if (customData) {
+        await actualizarPersonalizacion({ id: customData.id, ...customForm })
+      } else {
+        await crearPersonalizacion({ archivoId: customFileId, ...customForm })
+        const res = await getPersonalizacion(customFileId)
+        if (res?.data) setCustomData(res.data)
+      }
+      setActionMessage('Personalización guardada.')
+      refreshPersonalizaciones(data.archivos)
+    } catch (err) { setError(err.message) }
+  }
 
-      {error && (
-        <p className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</p>
-      )}
+  const handleDeleteCustom = async () => {
+    if (!customData) return
+    resetMessages()
+    try {
+      await eliminarPersonalizacion(customData.id)
+      setCustomData(null)
+      setCustomForm({ imagenPortada: '', colorTexto: '#000000', fuente: 'Arial' })
+      setActionMessage('Personalización eliminada.')
+      refreshPersonalizaciones(data.archivos)
+    } catch (err) { setError(err.message) }
+  }
 
-      {actionMessage && (
-        <p className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
-          {actionMessage}
-        </p>
-      )}
+  // ---------- section renderers ----------
+  const renderOverview = () => (
+    <div className="fade-up space-y-5">
+      <SectionHeader
+        title="Panel de control"
+        subtitle={`Hola, ${user.nombre}. Aquí tienes un resumen de tu espacio.`}
+      />
 
-      <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        {stats.map((item) => (
-          <StatCard key={item.title} title={item.title} value={item.value} hint={item.hint} />
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+        {stats.map((s) => (
+          <div key={s.title} className="card p-4">
+            <p className="text-xs font-medium uppercase tracking-wide text-(--ink-soft)">{s.title}</p>
+            <p className={`title-font mt-2 text-3xl font-bold ${s.color}`}>{s.value}</p>
+          </div>
         ))}
-      </section>
+      </div>
 
-      <section className="grid gap-5 lg:grid-cols-[1.4fr_1fr]">
-        <article className="glass-card fade-up rounded-2xl p-5">
-          <h2 className="title-font text-xl font-semibold text-[var(--ink)]">Ultimos archivos</h2>
-          <div className="mt-4 space-y-3">
-            {isLoading && <p className="text-sm text-[var(--ink-soft)]">Cargando archivos...</p>}
-            {!isLoading && data.archivos.length === 0 && (
-              <p className="text-sm text-[var(--ink-soft)]">No hay archivos todavia.</p>
-            )}
+      <div className="grid gap-4 lg:grid-cols-[1.5fr_1fr]">
+        {/* Recent files */}
+        <div className="card p-5">
+          <h3 className="mb-3 text-sm font-semibold text-(--ink)">Archivos recientes</h3>
+          {isLoading && <EmptyState message="Cargando..." />}
+          {!isLoading && data.archivos.length === 0 && <EmptyState message="No hay archivos todavía." />}
+          <div className="space-y-0.5">
             {data.archivos.slice(0, 8).map((archivo) => (
               <div
                 key={archivo.id}
-                className="flex items-center justify-between rounded-xl border border-[var(--line)] bg-white/70 px-4 py-3"
+                className="group flex items-center gap-3 rounded-lg px-2 py-2 hover:bg-(--line-soft) transition-colors"
               >
+                <span className="shrink-0 text-(--ink-xsoft)"><FileIcon /></span>
                 <button
                   type="button"
                   onClick={() => handleSelectDetailFile(archivo.id)}
-                  className="text-left transition hover:opacity-80"
+                  className="min-w-0 flex-1 text-left"
                 >
-                  <p className="font-semibold text-[var(--ink)]">{archivo.nombre}</p>
-                  <p className="text-xs text-[var(--ink-soft)]">{archivo.tipoArchivo ?? 'Archivo'}</p>
+                  <p className="truncate text-sm font-medium text-(--ink)">{archivo.nombre}</p>
+                  <p className="text-xs text-(--ink-xsoft)">
+                    {archivo.tipoArchivo ?? 'Archivo'} · {formatSize(archivo)}
+                  </p>
                 </button>
-
-                <div className="flex items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={() => handleToggleFavorite(archivo.id)}
-                    className={`rounded-lg px-2 py-1 text-xs font-semibold transition ${
-                      favoritesSet.has(archivo.id)
-                        ? 'bg-amber-100 text-amber-700'
-                        : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
-                    }`}
-                  >
-                    {favoritesSet.has(archivo.id) ? 'Favorito' : 'Marcar'}
-                  </button>
-
-                  <span className="rounded-lg bg-emerald-100 px-2 py-1 text-xs font-semibold text-emerald-700">
-                    {formatFileSize(archivo)}
-                  </span>
-                </div>
+                <button
+                  type="button"
+                  onClick={() => handleToggleFavorite(archivo.id)}
+                  className={`shrink-0 transition-colors ${
+                    favoritesSet.has(archivo.id)
+                      ? 'text-amber-400'
+                      : 'text-(--ink-xsoft) opacity-0 group-hover:opacity-100'
+                  }`}
+                >
+                  <StarIcon size={14} filled={favoritesSet.has(archivo.id)} />
+                </button>
               </div>
             ))}
           </div>
-        </article>
+        </div>
 
-        <article className="glass-card fade-up rounded-2xl p-5">
-          <h2 className="title-font text-xl font-semibold text-[var(--ink)]">Detalle e historial</h2>
-
-          {isDetailLoading && <p className="mt-4 text-sm text-[var(--ink-soft)]">Cargando detalle...</p>}
-
+        {/* Detail panel */}
+        <div className="card p-5">
+          <h3 className="mb-3 text-sm font-semibold text-(--ink)">Detalle y versiones</h3>
+          {isDetailLoading && <EmptyState message="Cargando..." />}
           {!isDetailLoading && !selectedDetailFileId && (
-            <p className="mt-4 text-sm text-[var(--ink-soft)]">Selecciona un archivo para ver su historial.</p>
+            <EmptyState message="Haz clic en un archivo para ver su historial." />
           )}
-
           {!isDetailLoading && selectedDetailFile && (
             <>
-              <div className="mt-4 rounded-xl border border-[var(--line)] bg-white/70 p-3">
-                <p className="font-semibold text-[var(--ink)]">{selectedDetailFile.nombre}</p>
-                <p className="text-xs text-[var(--ink-soft)]">Tipo: {selectedDetailFile.tipoArchivo}</p>
-                <p className="text-xs text-[var(--ink-soft)]">Peso: {formatFileSize(selectedDetailFile)}</p>
-                <p className="text-xs text-[var(--ink-soft)]">Subido: {new Date(selectedDetailFile.fechaSubida).toLocaleString()}</p>
+              <div className="mb-3 rounded-lg border border-(--line) p-3">
+                <p className="text-sm font-semibold text-(--ink)">{selectedDetailFile.nombre}</p>
+                <p className="mt-1 text-xs text-(--ink-soft)">Tipo: {selectedDetailFile.tipoArchivo}</p>
+                <p className="text-xs text-(--ink-soft)">Peso: {formatSize(selectedDetailFile)}</p>
+                <p className="text-xs text-(--ink-soft)">
+                  Subido: {new Date(selectedDetailFile.fechaSubida).toLocaleDateString()}
+                </p>
               </div>
-
-              <div className="mt-4 max-h-56 space-y-2 overflow-y-auto pr-1">
-                {versionHistory.length === 0 && (
-                  <p className="text-sm text-[var(--ink-soft)]">Sin historial registrado.</p>
-                )}
-                {versionHistory.map((version) => (
-                  <div key={version.id} className="rounded-xl border border-[var(--line)] bg-white/70 px-3 py-2">
-                    <p className="text-sm font-semibold text-[var(--ink)]">Version {version.versionNumero}</p>
-                    <p className="text-xs text-[var(--ink-soft)]">{version.comentarioCambio || 'Sin comentario'}</p>
-                    <p className="text-xs text-[var(--ink-soft)]">
-                      {new Date(version.fechaVersion).toLocaleString()}
+              <p className="mb-2 text-xs font-medium uppercase tracking-wide text-(--ink-soft)">
+                Versiones
+              </p>
+              <div className="max-h-48 space-y-1.5 overflow-y-auto">
+                {versionHistory.length === 0 && <EmptyState message="Sin historial." />}
+                {versionHistory.map((v) => (
+                  <div key={v.id} className="rounded-lg border border-(--line) px-3 py-2">
+                    <p className="text-[13px] font-semibold text-(--ink)">v{v.versionNumero}</p>
+                    <p className="text-xs text-(--ink-soft)">{v.comentarioCambio || 'Sin comentario'}</p>
+                    <p className="text-xs text-(--ink-xsoft)">
+                      {new Date(v.fechaVersion).toLocaleString()}
                     </p>
                   </div>
                 ))}
               </div>
             </>
           )}
-        </article>
-      </section>
+        </div>
+      </div>
 
-      <section className="grid gap-5 lg:grid-cols-2">
-        <article className="glass-card fade-up rounded-2xl p-5">
-          <h2 className="title-font text-xl font-semibold text-[var(--ink)]">Crear carpeta</h2>
-          <form onSubmit={handleCreateFolder} className="mt-4 space-y-3">
+      {/* Quick upload */}
+      <div className="card p-5">
+        <h3 className="mb-3 text-sm font-semibold text-(--ink)">Subida rápida</h3>
+        <form onSubmit={handleUpload} className="grid gap-2.5 sm:grid-cols-[1fr_1fr_auto]">
+          <select
+            required
+            value={selectedFolderId}
+            onChange={(e) => setSelectedFolderId(e.target.value)}
+            className="field"
+          >
+            <option value="">Selecciona carpeta</option>
+            {data.carpetas.map((c) => (
+              <option key={c.id} value={c.id}>{c.nombre}</option>
+            ))}
+          </select>
+          <div
+            onDragOver={handleDragOver}
+            onDragLeave={handleDragLeave}
+            onDrop={handleDrop}
+            className={`relative flex items-center gap-2 rounded-lg border-2 border-dashed px-3 py-2 transition-colors ${
+              isDragging ? 'border-(--brand) bg-(--brand-light)' : 'border-(--line) bg-white'
+            }`}
+          >
+            <span className="text-(--ink-xsoft)"><UploadIcon size={14} /></span>
+            <span className="flex-1 truncate text-sm text-(--ink-soft)">
+              {selectedFile ? selectedFile.name : 'Arrastra o selecciona'}
+            </span>
             <input
-              type="text"
+              type="file"
+              required={!selectedFile}
+              onChange={(e) => setSelectedFile(e.target.files?.[0] ?? null)}
+              className="absolute inset-0 cursor-pointer opacity-0"
+            />
+          </div>
+          <button
+            type="submit"
+            className="flex shrink-0 items-center gap-1.5 rounded-lg bg-(--brand) px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-(--brand-strong)"
+          >
+            <UploadIcon size={14} /> Subir
+          </button>
+        </form>
+        {uploadProgress > 0 && (
+          <div className="mt-3 space-y-1">
+            <div className="h-1.5 overflow-hidden rounded-full bg-(--line)">
+              <div
+                className="h-full bg-(--brand) transition-all"
+                style={{ width: `${uploadProgress}%` }}
+              />
+            </div>
+            <p className="text-xs text-(--ink-soft)">{uploadProgress}%</p>
+          </div>
+        )}
+      </div>
+    </div>
+  )
+
+  const renderFiles = () => (
+    <div className="fade-up">
+      <SectionHeader
+        title="Archivos"
+        subtitle={`${data.archivos.length} archivos en total`}
+      />
+      {isLoading && <EmptyState message="Cargando archivos..." />}
+      {!isLoading && data.archivos.length === 0 && (
+        <div className="card p-10 text-center">
+          <span className="mx-auto mb-3 block w-fit text-(--ink-xsoft)"><FileIcon size={32} /></span>
+          <p className="text-sm text-(--ink-soft)">No hay archivos. Súbelos desde el Panel de control.</p>
+        </div>
+      )}
+      {data.archivos.length > 0 && (
+        <div className="card overflow-hidden">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-(--line) bg-(--line-soft)">
+                <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-(--ink-soft)">
+                  Nombre
+                </th>
+                <th className="hidden px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-(--ink-soft) sm:table-cell">
+                  Tipo
+                </th>
+                <th className="hidden px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-(--ink-soft) md:table-cell">
+                  Tamaño
+                </th>
+                <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-(--ink-soft)">
+                  Acciones
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              {data.archivos.map((archivo, i) => {
+                const p = personalizacionesMap[archivo.id]
+                return (
+                <tr
+                  key={archivo.id}
+                  className={`hover:bg-(--line-soft) transition-colors ${
+                    i < data.archivos.length - 1 ? 'border-b border-(--line)' : ''
+                  }`}
+                >
+                  <td className="px-4 py-3">
+                    <div className="flex items-center gap-2.5">
+                      {p?.imagenPortada ? (
+                        <img
+                          src={p.imagenPortada}
+                          alt=""
+                          className="h-7 w-7 shrink-0 rounded object-cover"
+                          onError={(e) => { e.currentTarget.style.display = 'none' }}
+                        />
+                      ) : (
+                        <span className="shrink-0 text-(--ink-xsoft)"><FileIcon /></span>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => handleSelectDetailFile(archivo.id)}
+                        className="max-w-[180px] truncate font-medium transition-colors hover:text-(--brand)"
+                        style={{
+                          color: p?.colorTexto ?? undefined,
+                          fontFamily: p?.fuente ?? undefined,
+                        }}
+                      >
+                        {archivo.nombre}
+                      </button>
+                    </div>
+                  </td>
+                  <td className="hidden px-4 py-3 text-(--ink-soft) sm:table-cell">
+                    {archivo.tipoArchivo ?? '—'}
+                  </td>
+                  <td className="hidden px-4 py-3 text-(--ink-soft) md:table-cell">
+                    {formatSize(archivo)}
+                  </td>
+                  <td className="px-4 py-3">
+                    <div className="flex items-center justify-end gap-1.5">
+                      <button
+                        type="button"
+                        onClick={() => handleToggleFavorite(archivo.id)}
+                        className={`rounded-lg p-1.5 transition-colors ${
+                          favoritesSet.has(archivo.id)
+                            ? 'bg-(--accent-light) text-amber-500'
+                            : 'text-(--ink-xsoft) hover:bg-(--line-soft)'
+                        }`}
+                        title={favoritesSet.has(archivo.id) ? 'Quitar favorito' : 'Marcar favorito'}
+                      >
+                        <StarIcon size={14} filled={favoritesSet.has(archivo.id)} />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleDeleteFile(archivo.id)}
+                        className="rounded-lg p-1.5 text-(--ink-xsoft) transition-colors hover:bg-(--danger-light) hover:text-(--danger-text)"
+                        title="Eliminar"
+                      >
+                        <TrashIcon />
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              )
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  )
+
+  const renderFolders = () => {
+    if (openFolder) {
+      return (
+        <div className="fade-up">
+          <div className="mb-5 flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setOpenFolder(null)}
+              className="flex items-center gap-1 text-sm text-(--ink-soft) transition-colors hover:text-(--ink)"
+            >
+              <ChevronLeftIcon /> Carpetas
+            </button>
+            <span className="text-(--ink-xsoft)">/</span>
+            <span className="text-sm font-semibold text-(--ink)">{openFolder.nombre}</span>
+          </div>
+
+          {isFolderLoading && <EmptyState message="Cargando archivos..." />}
+          {!isFolderLoading && folderFiles.length === 0 && (
+            <div className="card p-10 text-center">
+              <span className="mx-auto mb-3 block w-fit text-(--ink-xsoft)"><FileIcon size={28} /></span>
+              <p className="text-sm text-(--ink-soft)">Esta carpeta está vacía.</p>
+            </div>
+          )}
+          {folderFiles.length > 0 && (
+            <div className="card overflow-hidden">
+              <div className="border-b border-(--line) bg-(--line-soft) px-4 py-3">
+                <p className="text-xs font-semibold uppercase tracking-wide text-(--ink-soft)">
+                  {folderFiles.length} archivo{folderFiles.length !== 1 ? 's' : ''}
+                </p>
+              </div>
+              <div className="divide-y divide-(--line)">
+                {folderFiles.map((archivo) => (
+                  <div
+                    key={archivo.id}
+                    className="group flex items-center gap-3 px-4 py-3 transition-colors hover:bg-(--line-soft)"
+                  >
+                    <span className="shrink-0 text-(--ink-xsoft)"><FileIcon /></span>
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-sm font-medium text-(--ink)">{archivo.nombre}</p>
+                      <p className="text-xs text-(--ink-xsoft)">{formatSize(archivo)}</p>
+                    </div>
+                    <div className="flex items-center gap-1.5 opacity-0 transition-opacity group-hover:opacity-100">
+                      <button
+                        type="button"
+                        onClick={() => handleToggleFavorite(archivo.id)}
+                        className={`rounded-lg p-1.5 transition-colors ${
+                          favoritesSet.has(archivo.id)
+                            ? 'text-amber-400'
+                            : 'text-(--ink-xsoft) hover:text-amber-400'
+                        }`}
+                      >
+                        <StarIcon size={14} filled={favoritesSet.has(archivo.id)} />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleDeleteFile(archivo.id)}
+                        className="rounded-lg p-1.5 text-(--ink-xsoft) transition-colors hover:text-(--danger-text)"
+                      >
+                        <TrashIcon />
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      )
+    }
+
+    return (
+      <div className="fade-up">
+        <SectionHeader title="Carpetas" subtitle={`${data.carpetas.length} carpetas activas`} />
+
+        <div className="card mb-5 p-4">
+          <p className="mb-3 text-[13px] font-semibold text-(--ink-soft)">Nueva carpeta</p>
+          <form onSubmit={handleCreateFolder} className="grid gap-2 sm:grid-cols-[1fr_1fr_auto]">
+            <input
               required
+              type="text"
               value={folderName}
-              onChange={(event) => setFolderName(event.target.value)}
+              onChange={(e) => setFolderName(e.target.value)}
               placeholder="Nombre de la carpeta"
-              className="w-full rounded-xl border border-[var(--line)] bg-white px-4 py-3 text-sm outline-none transition focus:border-[var(--brand)]"
+              className="field"
             />
             <input
               type="url"
               value={coverUrl}
-              onChange={(event) => setCoverUrl(event.target.value)}
+              onChange={(e) => setCoverUrl(e.target.value)}
               placeholder="URL de portada (opcional)"
-              className="w-full rounded-xl border border-[var(--line)] bg-white px-4 py-3 text-sm outline-none transition focus:border-[var(--brand)]"
+              className="field"
             />
             <button
               type="submit"
-              className="rounded-xl bg-[var(--brand)] px-4 py-2 text-sm font-semibold text-white transition hover:bg-[var(--brand-strong)]"
+              className="flex shrink-0 items-center gap-1.5 rounded-lg bg-(--brand) px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-(--brand-strong)"
             >
-              Crear carpeta
+              <PlusIcon /> Crear
             </button>
           </form>
-        </article>
+        </div>
 
-        <article className="glass-card fade-up rounded-2xl p-5">
-          <h2 className="title-font text-xl font-semibold text-[var(--ink)]">Subir archivo</h2>
-
-          <form onSubmit={handleUpload} className="mt-4 space-y-3">
-            <select
-              required
-              value={selectedFolderId}
-              onChange={(event) => setSelectedFolderId(event.target.value)}
-              className="w-full rounded-xl border border-[var(--line)] bg-white px-4 py-3 text-sm outline-none transition focus:border-[var(--brand)]"
-            >
-              <option value="">Selecciona una carpeta</option>
-              {data.carpetas.map((carpeta) => (
-                <option key={carpeta.id} value={carpeta.id}>
-                  {carpeta.nombre}
-                </option>
-              ))}
-            </select>
-
-            <div
-              onDragOver={handleDragOver}
-              onDragLeave={handleDragLeave}
-              onDrop={handleDrop}
-              className={`rounded-xl border-2 border-dashed px-4 py-6 text-center transition ${
-                isDragging ? 'border-[var(--brand)] bg-emerald-50' : 'border-[var(--line)] bg-white/60'
-              }`}
-            >
-              <p className="text-sm font-semibold text-[var(--ink)]">Arrastra un archivo aqui</p>
-              <p className="mt-1 text-xs text-[var(--ink-soft)]">o selecciona uno desde tu equipo</p>
-
-              <input
-                required={!selectedFile}
-                type="file"
-                onChange={(event) => setSelectedFile(event.target.files?.[0] ?? null)}
-                className="mt-3 w-full rounded-xl border border-[var(--line)] bg-white px-4 py-2 text-sm outline-none transition file:mr-3 file:rounded-lg file:border-0 file:bg-emerald-100 file:px-3 file:py-1 file:text-sm file:font-semibold file:text-emerald-700"
-              />
-
-              {selectedFile && <p className="mt-2 text-xs text-[var(--ink-soft)]">Seleccionado: {selectedFile.name}</p>}
-            </div>
-
-            {uploadProgress > 0 && (
-              <div className="space-y-1">
-                <div className="h-2 overflow-hidden rounded bg-slate-200">
-                  <div
-                    className="h-full bg-[var(--brand)] transition-all"
-                    style={{ width: `${uploadProgress}%` }}
-                  />
+        {data.carpetas.length === 0 && <EmptyState message="No hay carpetas todavía." />}
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          {data.carpetas.map((carpeta) => {
+            const count = data.archivos.filter((a) => a.carpetaId === carpeta.id).length
+            return (
+              <div key={carpeta.id} className="card group p-4 transition-shadow hover:shadow-md">
+                <div className="flex items-start justify-between">
+                  <button
+                    type="button"
+                    onClick={() => handleOpenFolder(carpeta)}
+                    className="flex flex-1 items-center gap-2.5 text-left"
+                  >
+                    <span className="text-amber-400"><FolderIcon size={20} /></span>
+                    <div>
+                      <p className="text-sm font-semibold text-(--ink)">{carpeta.nombre}</p>
+                      <p className="mt-0.5 text-xs text-(--ink-soft)">
+                        {count} archivo{count !== 1 ? 's' : ''}
+                      </p>
+                    </div>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleDeleteFolder(carpeta.id)}
+                    className="rounded-lg p-1.5 text-(--ink-xsoft) opacity-0 transition-all hover:bg-(--danger-light) hover:text-(--danger-text) group-hover:opacity-100"
+                    title="Eliminar carpeta"
+                  >
+                    <TrashIcon />
+                  </button>
                 </div>
-                <p className="text-xs text-[var(--ink-soft)]">Subiendo... {uploadProgress}%</p>
               </div>
-            )}
+            )
+          })}
+        </div>
+      </div>
+    )
+  }
 
-            <button
-              type="submit"
-              className="rounded-xl bg-[var(--ink)] px-4 py-2 text-sm font-semibold text-white transition hover:opacity-90"
-            >
-              Subir archivo
-            </button>
-          </form>
-        </article>
-      </section>
-
-      <section className="grid gap-5 lg:grid-cols-3">
-        <article className="glass-card fade-up rounded-2xl p-5">
-          <h2 className="title-font text-xl font-semibold text-[var(--ink)]">Etiquetas</h2>
-
-          <form onSubmit={handleCreateTag} className="mt-4 space-y-3">
+  const renderTags = () => (
+    <div className="fade-up">
+      <SectionHeader title="Etiquetas" subtitle="Clasifica tus archivos con etiquetas personalizadas" />
+      <div className="grid gap-4 lg:grid-cols-2">
+        {/* Create + list */}
+        <div className="card space-y-4 p-5">
+          <p className="text-[13px] font-semibold text-(--ink-soft)">Crear etiqueta</p>
+          <form onSubmit={handleCreateTag} className="flex gap-2">
             <input
               required
               type="text"
               value={newTagName}
-              onChange={(event) => setNewTagName(event.target.value)}
+              onChange={(e) => setNewTagName(e.target.value)}
               placeholder="Nombre de etiqueta"
-              className="w-full rounded-xl border border-[var(--line)] bg-white px-4 py-3 text-sm outline-none transition focus:border-[var(--brand)]"
+              className="field"
             />
             <button
               type="submit"
-              className="rounded-xl bg-[var(--brand)] px-4 py-2 text-sm font-semibold text-white transition hover:bg-[var(--brand-strong)]"
+              className="flex shrink-0 items-center gap-1 rounded-lg bg-(--brand) px-3 py-2 text-sm font-semibold text-white transition-colors hover:bg-(--brand-strong)"
             >
-              Crear etiqueta
+              <PlusIcon /> Crear
             </button>
           </form>
-
-          <form onSubmit={handleAssignTag} className="mt-5 space-y-3">
-            <select
-              required
-              value={selectedTagId}
-              onChange={(event) => setSelectedTagId(event.target.value)}
-              className="w-full rounded-xl border border-[var(--line)] bg-white px-4 py-3 text-sm outline-none transition focus:border-[var(--brand)]"
-            >
-              <option value="">Selecciona etiqueta</option>
-              {data.etiquetas.map((etiqueta) => (
-                <option key={etiqueta.id} value={etiqueta.id}>
-                  {etiqueta.nombreEtiqueta}
-                </option>
-              ))}
-            </select>
-
-            <select
-              required
-              value={selectedTagFileId}
-              onChange={(event) => setSelectedTagFileId(event.target.value)}
-              className="w-full rounded-xl border border-[var(--line)] bg-white px-4 py-3 text-sm outline-none transition focus:border-[var(--brand)]"
-            >
-              <option value="">Selecciona archivo</option>
-              {data.archivos.map((archivo) => (
-                <option key={archivo.id} value={archivo.id}>
-                  {archivo.nombre}
-                </option>
-              ))}
-            </select>
-
-            <button
-              type="submit"
-              className="rounded-xl bg-[var(--ink)] px-4 py-2 text-sm font-semibold text-white transition hover:opacity-90"
-            >
-              Asignar etiqueta
-            </button>
-          </form>
-
-          <div className="mt-5 space-y-2">
-            {data.etiquetas.slice(0, 8).map((etiqueta) => (
-              <div key={etiqueta.id} className="rounded-xl border border-[var(--line)] bg-white/70 px-3 py-2">
-                {editingTagId === etiqueta.id ? (
-                  <form onSubmit={handleSaveEditTag} className="space-y-2">
+          <div className="space-y-1.5 border-t border-(--line) pt-3">
+            {data.etiquetas.length === 0 && <EmptyState message="No hay etiquetas todavía." />}
+            {data.etiquetas.map((et) => (
+              <div
+                key={et.id}
+                className="flex items-center gap-2 rounded-lg border border-(--line) px-3 py-2"
+              >
+                {editingTagId === et.id ? (
+                  <form onSubmit={handleSaveEditTag} className="flex flex-1 gap-2">
                     <input
                       value={editingTagName}
-                      onChange={(event) => setEditingTagName(event.target.value)}
-                      className="w-full rounded-lg border border-[var(--line)] px-2 py-1 text-sm"
+                      onChange={(e) => setEditingTagName(e.target.value)}
+                      className="field py-1 text-xs"
                     />
-                    <div className="flex gap-2">
-                      <button type="submit" className="rounded bg-emerald-600 px-2 py-1 text-xs font-semibold text-white">
-                        Guardar
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setEditingTagId('')
-                          setEditingTagName('')
-                        }}
-                        className="rounded bg-slate-200 px-2 py-1 text-xs font-semibold text-slate-700"
-                      >
-                        Cancelar
-                      </button>
-                    </div>
+                    <button type="submit" className="rounded-md bg-(--brand) p-1.5 text-white">
+                      <CheckIcon />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => { setEditingTagId(''); setEditingTagName('') }}
+                      className="rounded-md bg-(--line) p-1.5 text-(--ink-soft)"
+                    >
+                      <XIcon />
+                    </button>
                   </form>
                 ) : (
-                  <div className="flex items-center justify-between gap-2">
-                    <p className="text-sm font-semibold text-[var(--ink)]">{etiqueta.nombreEtiqueta}</p>
-                    <div className="flex gap-2">
-                      <button
-                        type="button"
-                        onClick={() => handleStartEditTag(etiqueta)}
-                        className="rounded bg-slate-100 px-2 py-1 text-xs font-semibold text-slate-700"
-                      >
-                        Editar
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => handleDeleteTag(etiqueta.id)}
-                        className="rounded bg-rose-100 px-2 py-1 text-xs font-semibold text-rose-700"
-                      >
-                        Eliminar
-                      </button>
-                    </div>
-                  </div>
+                  <>
+                    <span className="flex-1 text-sm font-medium text-(--ink)">{et.nombreEtiqueta}</span>
+                    <button
+                      type="button"
+                      onClick={() => { setEditingTagId(et.id); setEditingTagName(et.nombreEtiqueta) }}
+                      className="rounded-md p-1.5 text-(--ink-xsoft) transition-colors hover:bg-(--line-soft)"
+                    >
+                      <EditIcon />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleDeleteTag(et.id)}
+                      className="rounded-md p-1.5 text-(--ink-xsoft) transition-colors hover:bg-(--danger-light) hover:text-(--danger-text)"
+                    >
+                      <TrashIcon />
+                    </button>
+                  </>
                 )}
               </div>
             ))}
           </div>
-        </article>
+        </div>
 
-        <article className="glass-card fade-up rounded-2xl p-5 lg:col-span-2">
-          <h2 className="title-font text-xl font-semibold text-[var(--ink)]">Comentarios por archivo</h2>
+        {/* Assign */}
+        <div className="card p-5">
+          <p className="mb-3 text-[13px] font-semibold text-(--ink-soft)">Asignar etiqueta a archivo</p>
+          <form onSubmit={handleAssignTag} className="space-y-3">
+            <select
+              required
+              value={selectedTagId}
+              onChange={(e) => setSelectedTagId(e.target.value)}
+              className="field"
+            >
+              <option value="">Selecciona etiqueta</option>
+              {data.etiquetas.map((et) => (
+                <option key={et.id} value={et.id}>{et.nombreEtiqueta}</option>
+              ))}
+            </select>
+            <select
+              required
+              value={selectedTagFileId}
+              onChange={(e) => setSelectedTagFileId(e.target.value)}
+              className="field"
+            >
+              <option value="">Selecciona archivo</option>
+              {data.archivos.map((a) => (
+                <option key={a.id} value={a.id}>{a.nombre}</option>
+              ))}
+            </select>
+            <button
+              type="submit"
+              className="w-full rounded-lg bg-(--ink) px-4 py-2 text-sm font-semibold text-white transition-opacity hover:opacity-90"
+            >
+              Asignar etiqueta
+            </button>
+          </form>
+        </div>
+      </div>
+    </div>
+  )
 
-          <form onSubmit={handleCreateComment} className="mt-4 grid gap-3 md:grid-cols-[1fr_1.6fr_auto]">
+  const renderFavorites = () => {
+    const favoriteFiles = data.archivos.filter((a) => favoritesSet.has(a.id))
+    return (
+      <div className="fade-up">
+        <SectionHeader
+          title="Favoritos"
+          subtitle={`${favoriteFiles.length} archivo${favoriteFiles.length !== 1 ? 's' : ''} marcado${favoriteFiles.length !== 1 ? 's' : ''}`}
+        />
+        {favoriteFiles.length === 0 && (
+          <div className="card p-10 text-center">
+            <span className="mx-auto mb-3 block w-fit text-amber-300"><StarIcon size={32} /></span>
+            <p className="text-sm text-(--ink-soft)">Aún no tienes favoritos. Márcalos desde Archivos.</p>
+          </div>
+        )}
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          {favoriteFiles.map((archivo) => (
+            <div key={archivo.id} className="card group p-4 transition-shadow hover:shadow-md">
+              <div className="flex items-start gap-3">
+                <span className="mt-0.5 shrink-0 text-(--ink-xsoft)"><FileIcon /></span>
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-sm font-semibold text-(--ink)">{archivo.nombre}</p>
+                  <p className="mt-0.5 text-xs text-(--ink-soft)">{formatSize(archivo)}</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => handleToggleFavorite(archivo.id)}
+                  className="shrink-0 text-amber-400 transition-colors hover:text-amber-500"
+                >
+                  <StarIcon size={14} filled />
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    )
+  }
+
+  const renderComments = () => (
+    <div className="fade-up">
+      <SectionHeader title="Comentarios" subtitle="Discusiones por archivo" />
+      <div className="grid gap-4 lg:grid-cols-[1fr_1.4fr]">
+        <div className="card space-y-3 p-5">
+          <p className="text-[13px] font-semibold text-(--ink-soft)">Nuevo comentario</p>
+          <form onSubmit={handleCreateComment} className="space-y-3">
             <select
               required
               value={selectedCommentFileId}
-              onChange={(event) => setSelectedCommentFileId(event.target.value)}
-              className="w-full rounded-xl border border-[var(--line)] bg-white px-4 py-3 text-sm outline-none transition focus:border-[var(--brand)]"
+              onChange={(e) => setSelectedCommentFileId(e.target.value)}
+              className="field"
             >
-              <option value="">Selecciona archivo</option>
-              {data.archivos.map((archivo) => (
-                <option key={archivo.id} value={archivo.id}>
-                  {archivo.nombre}
-                </option>
+              <option value="">Selecciona un archivo</option>
+              {data.archivos.map((a) => (
+                <option key={a.id} value={a.id}>{a.nombre}</option>
               ))}
             </select>
-
-            <input
+            <textarea
               required
-              type="text"
               value={commentText}
-              onChange={(event) => setCommentText(event.target.value)}
-              placeholder="Escribe un comentario"
-              className="w-full rounded-xl border border-[var(--line)] bg-white px-4 py-3 text-sm outline-none transition focus:border-[var(--brand)]"
+              onChange={(e) => setCommentText(e.target.value)}
+              placeholder="Escribe un comentario..."
+              rows={3}
+              className="field resize-none"
             />
-
             <button
               type="submit"
-              className="rounded-xl bg-[var(--brand)] px-4 py-2 text-sm font-semibold text-white transition hover:bg-[var(--brand-strong)]"
+              className="w-full rounded-lg bg-(--brand) px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-(--brand-strong)"
             >
-              Comentar
+              Publicar
             </button>
           </form>
+        </div>
 
-          <div className="mt-4 max-h-72 space-y-2 overflow-y-auto pr-1">
-            {!selectedCommentFileId && (
-              <p className="text-sm text-[var(--ink-soft)]">Selecciona un archivo para ver comentarios.</p>
-            )}
-            {isCommentsLoading && <p className="text-sm text-[var(--ink-soft)]">Cargando comentarios...</p>}
-            {selectedCommentFileId && !isCommentsLoading && visibleComments.length === 0 && (
-              <p className="text-sm text-[var(--ink-soft)]">Este archivo aun no tiene comentarios.</p>
-            )}
-
-            {visibleComments.map((comentario) => (
-              <div key={comentario.id} className="rounded-xl border border-[var(--line)] bg-white/70 px-3 py-2">
-                {editingCommentId === comentario.id ? (
+        <div className="card p-5">
+          <p className="mb-3 text-[13px] font-semibold text-(--ink-soft)">
+            {selectedCommentFileId
+              ? `Comentarios · ${comments.length}`
+              : 'Selecciona un archivo para ver comentarios'}
+          </p>
+          {isCommentsLoading && <EmptyState message="Cargando comentarios..." />}
+          {!isCommentsLoading && selectedCommentFileId && comments.length === 0 && (
+            <EmptyState message="Sin comentarios en este archivo." />
+          )}
+          <div className="max-h-80 space-y-2 overflow-y-auto">
+            {comments.map((c) => (
+              <div key={c.id} className="rounded-lg border border-(--line) px-3 py-2.5">
+                {editingCommentId === c.id ? (
                   <form onSubmit={handleSaveEditComment} className="space-y-2">
                     <input
                       value={editingCommentText}
-                      onChange={(event) => setEditingCommentText(event.target.value)}
-                      className="w-full rounded-lg border border-[var(--line)] px-2 py-1 text-sm"
+                      onChange={(e) => setEditingCommentText(e.target.value)}
+                      className="field text-sm"
                     />
                     <div className="flex gap-2">
-                      <button type="submit" className="rounded bg-emerald-600 px-2 py-1 text-xs font-semibold text-white">
-                        Guardar
+                      <button
+                        type="submit"
+                        className="flex items-center gap-1 rounded-md bg-(--brand) px-2.5 py-1 text-xs font-semibold text-white"
+                      >
+                        <CheckIcon /> Guardar
                       </button>
                       <button
                         type="button"
-                        onClick={() => {
-                          setEditingCommentId('')
-                          setEditingCommentText('')
-                        }}
-                        className="rounded bg-slate-200 px-2 py-1 text-xs font-semibold text-slate-700"
+                        onClick={() => { setEditingCommentId(''); setEditingCommentText('') }}
+                        className="rounded-md bg-(--line) px-2.5 py-1 text-xs font-semibold text-(--ink-soft)"
                       >
                         Cancelar
                       </button>
                     </div>
                   </form>
                 ) : (
-                  <div className="space-y-2">
-                    <p className="text-sm text-[var(--ink)]">{comentario.comentario}</p>
-                    <div className="flex items-center justify-between">
-                      <p className="text-xs text-[var(--ink-soft)]">Usuario: {comentario.usuarioId}</p>
-                      <div className="flex gap-2">
+                  <div>
+                    <p className="text-sm text-(--ink)">{c.comentario}</p>
+                    <div className="mt-1.5 flex items-center justify-between">
+                      <p className="text-xs text-(--ink-xsoft)">
+                        {new Date(c.fechaComentario ?? Date.now()).toLocaleDateString()}
+                      </p>
+                      <div className="flex gap-1.5">
                         <button
                           type="button"
-                          onClick={() => handleStartEditComment(comentario)}
-                          className="rounded bg-slate-100 px-2 py-1 text-xs font-semibold text-slate-700"
+                          onClick={() => { setEditingCommentId(c.id); setEditingCommentText(c.comentario) }}
+                          className="rounded-md p-1 text-(--ink-xsoft) transition-colors hover:bg-(--line-soft)"
                         >
-                          Editar
+                          <EditIcon />
                         </button>
                         <button
                           type="button"
-                          onClick={() => handleDeleteComment(comentario.id)}
-                          className="rounded bg-rose-100 px-2 py-1 text-xs font-semibold text-rose-700"
+                          onClick={() => handleDeleteComment(c.id)}
+                          className="rounded-md p-1 text-(--ink-xsoft) transition-colors hover:bg-(--danger-light) hover:text-(--danger-text)"
                         >
-                          Eliminar
+                          <TrashIcon />
                         </button>
                       </div>
                     </div>
@@ -815,8 +1148,243 @@ export function DashboardPage({ user, onSessionClosed }) {
               </div>
             ))}
           </div>
-        </article>
-      </section>
-    </main>
+        </div>
+      </div>
+    </div>
+  )
+
+  const renderActivity = () => (
+    <div className="fade-up">
+      <SectionHeader title="Actividad" subtitle="Registro de acciones recientes" />
+      {isActivityLoading && <EmptyState message="Cargando actividad..." />}
+      {!isActivityLoading && activity.length === 0 && (
+        <div className="card p-10 text-center">
+          <p className="text-sm text-(--ink-soft)">Sin actividad registrada todavía.</p>
+        </div>
+      )}
+      {activity.length > 0 && (
+        <div className="card overflow-hidden">
+          <div className="divide-y divide-(--line)">
+            {activity.map((reg, i) => (
+              <div key={reg.id ?? i} className="flex items-start gap-3 px-4 py-3">
+                <div className="mt-1.5 h-2 w-2 shrink-0 rounded-full bg-(--brand)" />
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm font-medium text-(--ink)">{reg.accion}</p>
+                  <p className="mt-0.5 text-xs text-(--ink-xsoft)">
+                    {new Date(reg.fecha ?? Date.now()).toLocaleString()}
+                  </p>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  )
+
+  const renderCustomization = () => (
+    <div className="fade-up">
+      <SectionHeader title="Personalizar archivo" subtitle="Imagen de portada, color de texto y fuente por archivo" />
+      <div className="grid gap-4 lg:grid-cols-2">
+        {/* File picker + form */}
+        <div className="card p-5 space-y-4">
+          <div>
+            <label className="mb-1.5 block text-[13px] font-semibold text-(--ink-soft)">Archivo</label>
+            <select
+              value={customFileId}
+              onChange={(e) => handleLoadCustom(e.target.value)}
+              className="field"
+            >
+              <option value="">Selecciona un archivo</option>
+              {data.archivos.map((a) => (
+                <option key={a.id} value={a.id}>{a.nombre}</option>
+              ))}
+            </select>
+          </div>
+
+          {isCustomLoading && <EmptyState message="Cargando personalización..." />}
+
+          {!isCustomLoading && customFileId && (
+            <form onSubmit={handleSaveCustom} className="space-y-3">
+              <div>
+                <label className="mb-1.5 block text-[13px] font-semibold text-(--ink-soft)">
+                  URL imagen de portada
+                </label>
+                <input
+                  type="url"
+                  value={customForm.imagenPortada}
+                  onChange={(e) => setCustomForm((p) => ({ ...p, imagenPortada: e.target.value }))}
+                  placeholder="https://..."
+                  className="field"
+                />
+              </div>
+              <div className="flex gap-3">
+                <div className="flex-1">
+                  <label className="mb-1.5 block text-[13px] font-semibold text-(--ink-soft)">
+                    Color de texto
+                  </label>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="color"
+                      value={customForm.colorTexto}
+                      onChange={(e) => setCustomForm((p) => ({ ...p, colorTexto: e.target.value }))}
+                      className="h-9 w-12 cursor-pointer rounded border border-(--line) bg-(--paper) p-1"
+                    />
+                    <span className="text-sm text-(--ink-soft)">{customForm.colorTexto}</span>
+                  </div>
+                </div>
+                <div className="flex-1">
+                  <label className="mb-1.5 block text-[13px] font-semibold text-(--ink-soft)">
+                    Fuente
+                  </label>
+                  <select
+                    value={customForm.fuente}
+                    onChange={(e) => setCustomForm((p) => ({ ...p, fuente: e.target.value }))}
+                    className="field"
+                  >
+                    {['Arial', 'Georgia', 'Helvetica', 'Inter', 'Courier New', 'Times New Roman', 'Verdana'].map(
+                      (f) => <option key={f} value={f}>{f}</option>,
+                    )}
+                  </select>
+                </div>
+              </div>
+              <div className="flex gap-2 pt-1">
+                <button
+                  type="submit"
+                  className="flex-1 rounded-lg bg-(--brand) px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-(--brand-strong)"
+                >
+                  {customData ? 'Actualizar' : 'Crear'}
+                </button>
+                {customData && (
+                  <button
+                    type="button"
+                    onClick={handleDeleteCustom}
+                    className="rounded-lg border border-(--line) px-4 py-2 text-sm font-semibold text-(--ink-soft) transition-colors hover:bg-(--danger-light) hover:text-(--danger-text)"
+                  >
+                    Eliminar
+                  </button>
+                )}
+              </div>
+            </form>
+          )}
+        </div>
+
+        {/* Preview */}
+        <div className="card p-5">
+          <p className="mb-3 text-[13px] font-semibold text-(--ink-soft)">Vista previa</p>
+          {!customFileId ? (
+            <EmptyState message="Selecciona un archivo para ver la vista previa." />
+          ) : (
+            <div className="overflow-hidden rounded-xl border border-(--line)">
+              {customForm.imagenPortada && (
+                <div className="h-32 w-full overflow-hidden bg-(--line-soft)">
+                  <img
+                    src={customForm.imagenPortada}
+                    alt="Portada"
+                    className="h-full w-full object-cover"
+                    onError={(e) => { e.currentTarget.style.display = 'none' }}
+                  />
+                </div>
+              )}
+              <div className="p-4">
+                <p
+                  style={{ color: customForm.colorTexto, fontFamily: customForm.fuente }}
+                  className="text-base font-semibold"
+                >
+                  {data.archivos.find((a) => a.id === customFileId)?.nombre ?? 'Nombre del archivo'}
+                </p>
+                <p
+                  style={{ fontFamily: customForm.fuente }}
+                  className="mt-1 text-sm text-(--ink-soft)"
+                >
+                  Fuente: {customForm.fuente}
+                </p>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+
+  const renderSettings = () => (
+    <div className="fade-up">
+      <SectionHeader title="Configuración" subtitle="Preferencias de tu cuenta" />
+      <div className="grid gap-4 lg:grid-cols-2">
+        {/* Theme */}
+        <div className="card p-5">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm font-semibold text-(--ink)">Tema de la interfaz</p>
+              <p className="mt-0.5 text-xs text-(--ink-soft)">
+                Actualmente en modo <span className="font-medium">{theme === 'Oscuro' ? 'oscuro' : 'claro'}</span>
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={handleToggleTheme}
+              className={`relative flex h-9 w-16 items-center rounded-full transition-colors ${
+                theme === 'Oscuro' ? 'bg-(--brand)' : 'bg-(--line)'
+              }`}
+              aria-label="Cambiar tema"
+            >
+              <span
+                className={`absolute flex h-7 w-7 items-center justify-center rounded-full bg-white shadow transition-transform ${
+                  theme === 'Oscuro' ? 'translate-x-8' : 'translate-x-1'
+                }`}
+              >
+                {theme === 'Oscuro'
+                  ? <MoonIcon size={13} />
+                  : <SunIcon size={13} />
+                }
+              </span>
+            </button>
+          </div>
+        </div>
+
+        {/* User info */}
+        <div className="card p-5 space-y-2">
+          <p className="text-[13px] font-semibold text-(--ink-soft)">Información de cuenta</p>
+          <div className="rounded-lg bg-(--line-soft) px-4 py-3 space-y-1">
+            <p className="text-sm font-semibold text-(--ink)">{user.nombre}</p>
+            <p className="text-xs text-(--ink-soft)">{user.correo}</p>
+            <p className="text-xs text-(--ink-xsoft)">ID: {user.id}</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+
+  const sectionMap = {
+    overview:      renderOverview,
+    files:         renderFiles,
+    folders:       renderFolders,
+    tags:          renderTags,
+    favorites:     renderFavorites,
+    comments:      renderComments,
+    activity:      renderActivity,
+    customization: renderCustomization,
+    settings:      renderSettings,
+  }
+
+  return (
+    <div className="flex h-screen overflow-hidden bg-(--bg)">
+      <Sidebar
+        activeSection={activeSection}
+        onSectionChange={(s) => {
+          setActiveSection(s)
+          if (s !== 'folders') setOpenFolder(null)
+          resetMessages()
+        }}
+        user={user}
+        onLogout={handleLogout}
+      />
+      <main className="flex-1 overflow-y-auto">
+        <div className="mx-auto max-w-4xl px-6 py-6">
+          <ActionBar error={error} message={actionMessage} onDismiss={resetMessages} />
+          {sectionMap[activeSection]?.()}
+        </div>
+      </main>
+    </div>
   )
 }

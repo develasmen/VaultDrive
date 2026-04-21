@@ -22,6 +22,9 @@ namespace VaultDrive.Abstracciones.Repositories
         public async Task<ArchivoPersonalizado> GetByArchivoId(Guid archivoId) =>
             await _collection.Find(a => a.ArchivoId == archivoId).FirstOrDefaultAsync();
 
+        public async Task<List<ArchivoPersonalizado>> GetByUsuarioArchivos(List<Guid> archivoIds) =>
+            await _collection.Find(a => archivoIds.Contains(a.ArchivoId)).ToListAsync();
+
         public async Task<bool> Actualizar(ArchivoPersonalizado archivo)
         {
             var resultado = await _collection.ReplaceOneAsync(a => a.Id == archivo.Id, archivo);

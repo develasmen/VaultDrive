@@ -33,6 +33,8 @@ builder.Services.AddScoped<IVersionArchivoRepository, VersionArchivoRepository>(
 builder.Services.AddScoped<ArchivoService>();
 builder.Services.AddScoped<ArchivoPersonalizadoService>();
 builder.Services.AddScoped<VersionArchivoService>();
+builder.Services.AddScoped<IConfiguracionUsuarioRepository, ConfiguracionUsuarioRepository>();
+builder.Services.AddScoped<ConfiguracionUsuarioService>();
 
 // --- 2. CONFIGURACIÓN DE CORS ---
 builder.Services.AddCors(options =>

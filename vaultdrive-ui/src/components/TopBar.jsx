@@ -8,23 +8,23 @@ export function TopBar({ user, onLogout }) {
         </div>
 
         <div>
-          <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[var(--ink-soft)]">
+          <p className="text-xs font-semibold uppercase tracking-[0.14em] text-(--ink-soft)">
             VaultDrive Workspace
           </p>
-          <h1 className="title-font text-2xl font-semibold text-[var(--ink)]">Panel de control</h1>
+          <h1 className="title-font text-2xl font-semibold text-(--ink)">Panel de control</h1>
         </div>
       </div>
 
       <div className="flex items-center gap-3">
-        <div className="rounded-xl border border-[var(--line)] bg-white/70 px-3 py-2 text-right">
-          <p className="text-sm font-semibold text-[var(--ink)]">{user.nombre}</p>
-          <p className="text-xs text-[var(--ink-soft)]">{user.correo}</p>
+        <div className="rounded-xl border border-(--line) bg-white/70 px-3 py-2 text-right">
+          <p className="text-sm font-semibold text-(--ink)">{user.nombre}</p>
+          <p className="text-xs text-(--ink-soft)">{user.correo}</p>
         </div>
 
         <button
           type="button"
           onClick={onLogout}
-          className="rounded-xl bg-[var(--ink)] px-4 py-2 text-sm font-semibold text-white transition hover:opacity-90"
+          className="rounded-xl bg-(--ink) px-4 py-2 text-sm font-semibold text-white transition hover:opacity-90"
         >
           Salir
         </button>

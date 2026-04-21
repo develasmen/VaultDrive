@@ -202,3 +202,52 @@ export function subirArchivoConProgreso({ usuarioId, carpetaId, file, onProgress
     xhr.send(formData)
   })
 }
+
+export function getArchivosByCarpeta(carpetaId) {
+  return request(`/Archivo/carpeta/${carpetaId}`)
+}
+
+export function eliminarArchivo(id) {
+  return request(`/Archivo/${id}`, { method: 'DELETE' })
+}
+
+export function eliminarCarpeta(id) {
+  return request(`/carpetas/${id}`, { method: 'DELETE' })
+}
+
+export function getRegistroActividad(usuarioId) {
+  return request(`/RegistroActividad/${usuarioId}`)
+}
+
+// ---------- ConfiguracionUsuario ----------
+export function getConfiguracion(usuarioId) {
+  return request(`/ConfiguracionUsuario/${usuarioId}`)
+}
+
+export function actualizarConfiguracion(usuarioId, dto) {
+  return request(`/ConfiguracionUsuario/${usuarioId}`, {
+    method: 'PUT',
+    body: JSON.stringify(dto),
+  })
+}
+
+// ---------- ArchivoPersonalizado ----------
+export function getPersonalizacion(archivoId) {
+  return request(`/ArchivoPersonalizado/archivo/${archivoId}`)
+}
+
+export function getPersonalizacionesBulk(archivoIds) {
+  return request('/ArchivoPersonalizado/bulk', { method: 'POST', body: JSON.stringify(archivoIds) })
+}
+
+export function crearPersonalizacion(dto) {
+  return request('/ArchivoPersonalizado', { method: 'POST', body: JSON.stringify(dto) })
+}
+
+export function actualizarPersonalizacion(dto) {
+  return request('/ArchivoPersonalizado', { method: 'PUT', body: JSON.stringify(dto) })
+}
+
+export function eliminarPersonalizacion(id) {
+  return request(`/ArchivoPersonalizado/${id}`, { method: 'DELETE' })
+}
