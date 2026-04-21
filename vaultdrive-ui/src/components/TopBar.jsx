@@ -1,11 +1,18 @@
 export function TopBar({ user, onLogout }) {
   return (
     <header className="glass-card fade-up flex flex-wrap items-center justify-between gap-3 rounded-2xl p-4">
-      <div>
+      <div className="flex items-center gap-3">
+        <div className="logo-stack" aria-hidden="true">
+          <span className="logo-stack__top" />
+          <span className="logo-stack__bottom" />
+        </div>
+
+        <div>
         <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[var(--ink-soft)]">
           VaultDrive Workspace
         </p>
         <h1 className="title-font text-2xl font-semibold text-[var(--ink)]">Panel de control</h1>
+        </div>
       </div>
 
       <div className="flex items-center gap-3">

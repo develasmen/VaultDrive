@@ -64,6 +64,45 @@ export function crearCarpeta(payload) {
   })
 }
 
+export function crearEtiqueta(payload) {
+  return request('/Etiquetas', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  })
+}
+
+export function asignarEtiqueta(payload) {
+  return request('/Etiquetas/asignar', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  })
+}
+
+export function agregarFavorito(payload) {
+  return request('/Favoritos', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  })
+}
+
+export function quitarFavorito(payload) {
+  return request('/Favoritos', {
+    method: 'DELETE',
+    body: JSON.stringify(payload),
+  })
+}
+
+export function crearComentario(payload) {
+  return request('/Comentarios', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  })
+}
+
+export function getComentariosByArchivo(archivoId) {
+  return request(`/Comentarios/${archivoId}`)
+}
+
 export async function subirArchivo({ usuarioId, carpetaId, file }) {
   const formData = new FormData()
   formData.append('file', file)

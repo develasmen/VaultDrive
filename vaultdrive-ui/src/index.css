@@ -46,6 +46,35 @@ body {
   animation: fade-up 0.55s ease-out both;
 }
 
+.logo-stack {
+  position: relative;
+  width: 52px;
+  height: 44px;
+}
+
+.logo-stack__top,
+.logo-stack__bottom {
+  position: absolute;
+  width: 46px;
+  height: 22px;
+  border-radius: 10px;
+  transform: skewX(-24deg);
+}
+
+.logo-stack__top {
+  top: 0;
+  left: 2px;
+  border: 2px solid #dde4dd;
+  background: linear-gradient(145deg, rgba(255, 255, 255, 0.9), rgba(225, 234, 224, 0.72));
+}
+
+.logo-stack__bottom {
+  top: 16px;
+  left: 6px;
+  border: 2px solid rgba(127, 73, 210, 0.5);
+  background: linear-gradient(140deg, rgba(193, 127, 245, 0.9), rgba(106, 65, 194, 0.85));
+}
+
 @keyframes fade-up {
   from {
     opacity: 0;
