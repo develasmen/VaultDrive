@@ -1,10 +1,12 @@
 import { useEffect, useMemo, useState } from 'react'
 import {
+  crearCarpeta,
   getArchivosByUsuario,
   getCarpetasByUsuario,
   getEtiquetasByUsuario,
   getFavoritosByUsuario,
   logout,
+  subirArchivo,
 } from '../lib/api'
 import { clearSession } from '../lib/session'
 import { StatCard } from '../components/StatCard'
@@ -19,6 +21,11 @@ export function DashboardPage({ user, onSessionClosed }) {
   })
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState('')
+  const [folderName, setFolderName] = useState('')
+  const [coverUrl, setCoverUrl] = useState('')
+  const [selectedFolderId, setSelectedFolderId] = useState('')
+  const [selectedFile, setSelectedFile] = useState(null)
+  const [actionMessage, setActionMessage] = useState('')
 
   useEffect(() => {
     let isMounted = true
@@ -57,6 +64,22 @@ export function DashboardPage({ user, onSessionClosed }) {
     }
   }, [user.id])
 
+  async function refreshData() {
+    const [archivosResponse, carpetasResponse, etiquetasResponse, favoritosResponse] = await Promise.all([
+      getArchivosByUsuario(user.id),
+      getCarpetasByUsuario(user.id),
+      getEtiquetasByUsuario(user.id),
+      getFavoritosByUsuario(user.id),
+    ])
+
+    setData({
+      archivos: archivosResponse?.data ?? [],
+      carpetas: Array.isArray(carpetasResponse) ? carpetasResponse : [],
+      etiquetas: etiquetasResponse?.data ?? [],
+      favoritos: favoritosResponse?.data ?? [],
+    })
+  }
+
   const stats = useMemo(
     () => [
       { title: 'Archivos', value: data.archivos.length, hint: 'Total de archivos cargados' },
@@ -78,12 +101,65 @@ export function DashboardPage({ user, onSessionClosed }) {
     onSessionClosed()
   }
 
+  const handleCreateFolder = async (event) => {
+    event.preventDefault()
+    setError('')
+    setActionMessage('')
+
+    try {
+      await crearCarpeta({
+        usuarioId: user.id,
+        nombre: folderName,
+        portadaImg: coverUrl,
+        carpetaPadre: null,
+      })
+
+      await refreshData()
+      setFolderName('')
+      setCoverUrl('')
+      setActionMessage('Carpeta creada correctamente.')
+    } catch (requestError) {
+      setError(requestError.message)
+    }
+  }
+
+  const handleUpload = async (event) => {
+    event.preventDefault()
+    setError('')
+    setActionMessage('')
+
+    if (!selectedFile || !selectedFolderId) {
+      setError('Selecciona carpeta y archivo para subir.')
+      return
+    }
+
+    try {
+      await subirArchivo({
+        usuarioId: user.id,
+        carpetaId: selectedFolderId,
+        file: selectedFile,
+      })
+
+      await refreshData()
+      setSelectedFile(null)
+      setActionMessage('Archivo subido correctamente.')
+    } catch (requestError) {
+      setError(requestError.message)
+    }
+  }
+
   return (
     <main className="mx-auto flex min-h-screen w-full max-w-6xl flex-col gap-6 px-4 py-7 md:px-6">
       <TopBar user={user} onLogout={handleLogout} />
 
       {error && (
         <p className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</p>
+      )}
+
+      {actionMessage && (
+        <p className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
+          {actionMessage}
+        </p>
       )}
 
       <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
@@ -133,6 +209,68 @@ export function DashboardPage({ user, onSessionClosed }) {
               </div>
             ))}
           </div>
+        </article>
+      </section>
+
+      <section className="grid gap-5 lg:grid-cols-2">
+        <article className="glass-card fade-up rounded-2xl p-5">
+          <h2 className="title-font text-xl font-semibold text-[var(--ink)]">Crear carpeta</h2>
+          <form onSubmit={handleCreateFolder} className="mt-4 space-y-3">
+            <input
+              type="text"
+              required
+              value={folderName}
+              onChange={(event) => setFolderName(event.target.value)}
+              placeholder="Nombre de la carpeta"
+              className="w-full rounded-xl border border-[var(--line)] bg-white px-4 py-3 text-sm outline-none transition focus:border-[var(--brand)]"
+            />
+            <input
+              type="url"
+              value={coverUrl}
+              onChange={(event) => setCoverUrl(event.target.value)}
+              placeholder="URL de portada (opcional)"
+              className="w-full rounded-xl border border-[var(--line)] bg-white px-4 py-3 text-sm outline-none transition focus:border-[var(--brand)]"
+            />
+            <button
+              type="submit"
+              className="rounded-xl bg-[var(--brand)] px-4 py-2 text-sm font-semibold text-white transition hover:bg-[var(--brand-strong)]"
+            >
+              Crear carpeta
+            </button>
+          </form>
+        </article>
+
+        <article className="glass-card fade-up rounded-2xl p-5">
+          <h2 className="title-font text-xl font-semibold text-[var(--ink)]">Subir archivo</h2>
+          <form onSubmit={handleUpload} className="mt-4 space-y-3">
+            <select
+              required
+              value={selectedFolderId}
+              onChange={(event) => setSelectedFolderId(event.target.value)}
+              className="w-full rounded-xl border border-[var(--line)] bg-white px-4 py-3 text-sm outline-none transition focus:border-[var(--brand)]"
+            >
+              <option value="">Selecciona una carpeta</option>
+              {data.carpetas.map((carpeta) => (
+                <option key={carpeta.id} value={carpeta.id}>
+                  {carpeta.nombre}
+                </option>
+              ))}
+            </select>
+
+            <input
+              required
+              type="file"
+              onChange={(event) => setSelectedFile(event.target.files?.[0] ?? null)}
+              className="w-full rounded-xl border border-[var(--line)] bg-white px-4 py-3 text-sm outline-none transition file:mr-3 file:rounded-lg file:border-0 file:bg-emerald-100 file:px-3 file:py-1 file:text-sm file:font-semibold file:text-emerald-700"
+            />
+
+            <button
+              type="submit"
+              className="rounded-xl bg-[var(--ink)] px-4 py-2 text-sm font-semibold text-white transition hover:opacity-90"
+            >
+              Subir archivo
+            </button>
+          </form>
         </article>
       </section>
     </main>
