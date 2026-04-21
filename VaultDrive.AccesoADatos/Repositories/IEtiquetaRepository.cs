@@ -7,6 +7,7 @@ namespace VaultDrive.Abstracciones.Repositories
         Task Crear(Etiqueta etiqueta);
         Task<List<Etiqueta>> ObtenerPorUsuario(Guid usuarioId);
         Task<Etiqueta> ObtenerPorId(Guid id);
+        Task<bool> Actualizar(Etiqueta etiqueta);
         Task<bool> Eliminar(Guid id);
     }
 }

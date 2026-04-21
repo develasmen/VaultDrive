@@ -22,6 +22,12 @@ namespace VaultDrive.Abstracciones.Repositories
         public async Task<Etiqueta> ObtenerPorId(Guid id)
             => await _collection.Find(e => e.Id == id).FirstOrDefaultAsync();
 
+        public async Task<bool> Actualizar(Etiqueta etiqueta)
+        {
+            var resultado = await _collection.ReplaceOneAsync(e => e.Id == etiqueta.Id, etiqueta);
+            return resultado.ModifiedCount > 0;
+        }
+
         public async Task<bool> Eliminar(Guid id)
         {
             var resultado = await _collection.DeleteOneAsync(e => e.Id == id);

@@ -1,18 +1,24 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
+  actualizarComentario,
+  actualizarEtiqueta,
   agregarFavorito,
   asignarEtiqueta,
   crearComentario,
   crearCarpeta,
   crearEtiqueta,
+  eliminarComentario,
+  eliminarEtiqueta,
+  getArchivoById,
   getArchivosByUsuario,
   getCarpetasByUsuario,
   getComentariosByArchivo,
   getEtiquetasByUsuario,
   getFavoritosByUsuario,
-  quitarFavorito,
+  getHistorialVersiones,
   logout,
-  subirArchivo,
+  quitarFavorito,
+  subirArchivoConProgreso,
 } from '../lib/api'
 import { clearSession } from '../lib/session'
 import { StatCard } from '../components/StatCard'
@@ -26,58 +32,36 @@ export function DashboardPage({ user, onSessionClosed }) {
     favoritos: [],
   })
   const [isLoading, setIsLoading] = useState(true)
+  const [isDetailLoading, setIsDetailLoading] = useState(false)
   const [error, setError] = useState('')
+  const [actionMessage, setActionMessage] = useState('')
+
   const [folderName, setFolderName] = useState('')
   const [coverUrl, setCoverUrl] = useState('')
+
   const [selectedFolderId, setSelectedFolderId] = useState('')
   const [selectedFile, setSelectedFile] = useState(null)
+  const [isDragging, setIsDragging] = useState(false)
+  const [uploadProgress, setUploadProgress] = useState(0)
+
   const [newTagName, setNewTagName] = useState('')
   const [selectedTagId, setSelectedTagId] = useState('')
   const [selectedTagFileId, setSelectedTagFileId] = useState('')
+  const [editingTagId, setEditingTagId] = useState('')
+  const [editingTagName, setEditingTagName] = useState('')
+
   const [selectedCommentFileId, setSelectedCommentFileId] = useState('')
   const [commentText, setCommentText] = useState('')
   const [comments, setComments] = useState([])
   const [isCommentsLoading, setIsCommentsLoading] = useState(false)
-  const [actionMessage, setActionMessage] = useState('')
+  const [editingCommentId, setEditingCommentId] = useState('')
+  const [editingCommentText, setEditingCommentText] = useState('')
 
-  useEffect(() => {
-    let isMounted = true
+  const [selectedDetailFileId, setSelectedDetailFileId] = useState('')
+  const [selectedDetailFile, setSelectedDetailFile] = useState(null)
+  const [versionHistory, setVersionHistory] = useState([])
 
-    async function loadData() {
-      setError('')
-      setIsLoading(true)
-      try {
-        const [archivosResponse, carpetasResponse, etiquetasResponse, favoritosResponse] = await Promise.all([
-          getArchivosByUsuario(user.id),
-          getCarpetasByUsuario(user.id),
-          getEtiquetasByUsuario(user.id),
-          getFavoritosByUsuario(user.id),
-        ])
-
-        if (!isMounted) return
-
-        setData({
-          archivos: archivosResponse?.data ?? [],
-          carpetas: Array.isArray(carpetasResponse) ? carpetasResponse : [],
-          etiquetas: etiquetasResponse?.data ?? [],
-          favoritos: favoritosResponse?.data ?? [],
-        })
-      } catch (requestError) {
-        if (!isMounted) return
-        setError(requestError.message)
-      } finally {
-        if (isMounted) setIsLoading(false)
-      }
-    }
-
-    loadData()
-
-    return () => {
-      isMounted = false
-    }
-  }, [user.id])
-
-  async function refreshData() {
+  const refreshData = useCallback(async () => {
     const [archivosResponse, carpetasResponse, etiquetasResponse, favoritosResponse] = await Promise.all([
       getArchivosByUsuario(user.id),
       getCarpetasByUsuario(user.id),
@@ -91,13 +75,33 @@ export function DashboardPage({ user, onSessionClosed }) {
       etiquetas: etiquetasResponse?.data ?? [],
       favoritos: favoritosResponse?.data ?? [],
     })
-  }
+  }, [user.id])
 
   useEffect(() => {
-    if (!selectedCommentFileId) {
-      setComments([])
-      return
+    let isMounted = true
+
+    async function loadData() {
+      setError('')
+      setIsLoading(true)
+      try {
+        await refreshData()
+      } catch (requestError) {
+        if (!isMounted) return
+        setError(requestError.message)
+      } finally {
+        if (isMounted) setIsLoading(false)
+      }
     }
+
+    loadData()
+
+    return () => {
+      isMounted = false
+    }
+  }, [refreshData])
+
+  useEffect(() => {
+    if (!selectedCommentFileId) return
 
     let active = true
 
@@ -137,10 +141,17 @@ export function DashboardPage({ user, onSessionClosed }) {
     [data.favoritos],
   )
 
+  const visibleComments = selectedCommentFileId ? comments : []
+
   const formatFileSize = (archivo) => {
     const bytes = archivo.tamano ?? archivo.tamaño ?? 0
     if (bytes / 1024 > 1024) return `${(bytes / 1024 / 1024).toFixed(1)} MB`
     return `${Math.max(1, Math.floor(bytes / 1024))} KB`
+  }
+
+  const resetMessages = () => {
+    setError('')
+    setActionMessage('')
   }
 
   const handleLogout = async () => {
@@ -156,8 +167,7 @@ export function DashboardPage({ user, onSessionClosed }) {
 
   const handleCreateFolder = async (event) => {
     event.preventDefault()
-    setError('')
-    setActionMessage('')
+    resetMessages()
 
     try {
       await crearCarpeta({
@@ -176,36 +186,63 @@ export function DashboardPage({ user, onSessionClosed }) {
     }
   }
 
-  const handleUpload = async (event) => {
+  const handleDragOver = (event) => {
     event.preventDefault()
-    setError('')
-    setActionMessage('')
+    setIsDragging(true)
+  }
 
+  const handleDragLeave = (event) => {
+    event.preventDefault()
+    setIsDragging(false)
+  }
+
+  const handleDrop = (event) => {
+    event.preventDefault()
+    setIsDragging(false)
+
+    const droppedFile = event.dataTransfer.files?.[0]
+    if (droppedFile) {
+      setSelectedFile(droppedFile)
+    }
+  }
+
+  const performUpload = async () => {
     if (!selectedFile || !selectedFolderId) {
       setError('Selecciona carpeta y archivo para subir.')
       return
     }
 
-    try {
-      await subirArchivo({
-        usuarioId: user.id,
-        carpetaId: selectedFolderId,
-        file: selectedFile,
-      })
+    setUploadProgress(0)
 
-      await refreshData()
-      setSelectedFolderId('')
-      setSelectedFile(null)
-      setActionMessage('Archivo subido correctamente.')
+    await subirArchivoConProgreso({
+      usuarioId: user.id,
+      carpetaId: selectedFolderId,
+      file: selectedFile,
+      onProgress: (percent) => setUploadProgress(percent),
+    })
+
+    await refreshData()
+    setSelectedFolderId('')
+    setSelectedFile(null)
+    setUploadProgress(0)
+    setActionMessage('Archivo subido correctamente.')
+  }
+
+  const handleUpload = async (event) => {
+    event.preventDefault()
+    resetMessages()
+
+    try {
+      await performUpload()
     } catch (requestError) {
       setError(requestError.message)
+      setUploadProgress(0)
     }
   }
 
   const handleCreateTag = async (event) => {
     event.preventDefault()
-    setError('')
-    setActionMessage('')
+    resetMessages()
 
     try {
       await crearEtiqueta({
@@ -222,8 +259,7 @@ export function DashboardPage({ user, onSessionClosed }) {
 
   const handleAssignTag = async (event) => {
     event.preventDefault()
-    setError('')
-    setActionMessage('')
+    resetMessages()
 
     if (!selectedTagId || !selectedTagFileId) {
       setError('Selecciona etiqueta y archivo para asignar.')
@@ -238,9 +274,46 @@ export function DashboardPage({ user, onSessionClosed }) {
     }
   }
 
+  const handleStartEditTag = (etiqueta) => {
+    setEditingTagId(etiqueta.id)
+    setEditingTagName(etiqueta.nombreEtiqueta)
+  }
+
+  const handleSaveEditTag = async (event) => {
+    event.preventDefault()
+    resetMessages()
+
+    if (!editingTagId) return
+
+    try {
+      await actualizarEtiqueta(editingTagId, { nombreEtiqueta: editingTagName })
+      await refreshData()
+      setEditingTagId('')
+      setEditingTagName('')
+      setActionMessage('Etiqueta actualizada correctamente.')
+    } catch (requestError) {
+      setError(requestError.message)
+    }
+  }
+
+  const handleDeleteTag = async (id) => {
+    resetMessages()
+
+    try {
+      await eliminarEtiqueta(id)
+      await refreshData()
+      if (editingTagId === id) {
+        setEditingTagId('')
+        setEditingTagName('')
+      }
+      setActionMessage('Etiqueta eliminada correctamente.')
+    } catch (requestError) {
+      setError(requestError.message)
+    }
+  }
+
   const handleToggleFavorite = async (archivoId) => {
-    setError('')
-    setActionMessage('')
+    resetMessages()
 
     try {
       if (favoritesSet.has(archivoId)) {
@@ -259,8 +332,7 @@ export function DashboardPage({ user, onSessionClosed }) {
 
   const handleCreateComment = async (event) => {
     event.preventDefault()
-    setError('')
-    setActionMessage('')
+    resetMessages()
 
     if (!selectedCommentFileId || !commentText.trim()) {
       setError('Selecciona archivo y escribe un comentario.')
@@ -280,6 +352,70 @@ export function DashboardPage({ user, onSessionClosed }) {
       setActionMessage('Comentario publicado.')
     } catch (requestError) {
       setError(requestError.message)
+    }
+  }
+
+  const handleStartEditComment = (comentario) => {
+    setEditingCommentId(comentario.id)
+    setEditingCommentText(comentario.comentario)
+  }
+
+  const handleSaveEditComment = async (event) => {
+    event.preventDefault()
+    resetMessages()
+
+    if (!editingCommentId || !selectedCommentFileId) return
+
+    try {
+      await actualizarComentario(editingCommentId, { comentario: editingCommentText })
+      const response = await getComentariosByArchivo(selectedCommentFileId)
+      setComments(response?.data ?? [])
+      setEditingCommentId('')
+      setEditingCommentText('')
+      setActionMessage('Comentario actualizado correctamente.')
+    } catch (requestError) {
+      setError(requestError.message)
+    }
+  }
+
+  const handleDeleteComment = async (id) => {
+    resetMessages()
+
+    try {
+      await eliminarComentario(id)
+      if (selectedCommentFileId) {
+        const response = await getComentariosByArchivo(selectedCommentFileId)
+        setComments(response?.data ?? [])
+      }
+      if (editingCommentId === id) {
+        setEditingCommentId('')
+        setEditingCommentText('')
+      }
+      setActionMessage('Comentario eliminado correctamente.')
+    } catch (requestError) {
+      setError(requestError.message)
+    }
+  }
+
+  const handleSelectDetailFile = async (fileId) => {
+    resetMessages()
+    setSelectedDetailFileId(fileId)
+    setIsDetailLoading(true)
+
+    try {
+      const [archivoResponse, historialResponse] = await Promise.all([
+        getArchivoById(fileId),
+        getHistorialVersiones(fileId),
+      ])
+
+      setSelectedDetailFile(archivoResponse?.data ?? null)
+      setVersionHistory(historialResponse?.data ?? [])
+    } catch (requestError) {
+      setSelectedDetailFile(null)
+      setVersionHistory([])
+      setError(requestError.message)
+    } finally {
+      setIsDetailLoading(false)
     }
   }
 
@@ -311,15 +447,20 @@ export function DashboardPage({ user, onSessionClosed }) {
             {!isLoading && data.archivos.length === 0 && (
               <p className="text-sm text-[var(--ink-soft)]">No hay archivos todavia.</p>
             )}
-            {data.archivos.slice(0, 6).map((archivo) => (
+            {data.archivos.slice(0, 8).map((archivo) => (
               <div
                 key={archivo.id}
                 className="flex items-center justify-between rounded-xl border border-[var(--line)] bg-white/70 px-4 py-3"
               >
-                <div>
+                <button
+                  type="button"
+                  onClick={() => handleSelectDetailFile(archivo.id)}
+                  className="text-left transition hover:opacity-80"
+                >
                   <p className="font-semibold text-[var(--ink)]">{archivo.nombre}</p>
                   <p className="text-xs text-[var(--ink-soft)]">{archivo.tipoArchivo ?? 'Archivo'}</p>
-                </div>
+                </button>
+
                 <div className="flex items-center gap-2">
                   <button
                     type="button"
@@ -343,19 +484,39 @@ export function DashboardPage({ user, onSessionClosed }) {
         </article>
 
         <article className="glass-card fade-up rounded-2xl p-5">
-          <h2 className="title-font text-xl font-semibold text-[var(--ink)]">Carpetas recientes</h2>
-          <div className="mt-4 space-y-2">
-            {isLoading && <p className="text-sm text-[var(--ink-soft)]">Cargando carpetas...</p>}
-            {!isLoading && data.carpetas.length === 0 && (
-              <p className="text-sm text-[var(--ink-soft)]">Aun no tienes carpetas.</p>
-            )}
-            {data.carpetas.slice(0, 6).map((carpeta) => (
-              <div key={carpeta.id} className="rounded-xl border border-[var(--line)] bg-white/70 px-3 py-2">
-                <p className="font-semibold text-[var(--ink)]">{carpeta.nombre}</p>
-                <p className="text-xs text-[var(--ink-soft)]">{carpeta.portadaImg || 'Sin portada'}</p>
+          <h2 className="title-font text-xl font-semibold text-[var(--ink)]">Detalle e historial</h2>
+
+          {isDetailLoading && <p className="mt-4 text-sm text-[var(--ink-soft)]">Cargando detalle...</p>}
+
+          {!isDetailLoading && !selectedDetailFileId && (
+            <p className="mt-4 text-sm text-[var(--ink-soft)]">Selecciona un archivo para ver su historial.</p>
+          )}
+
+          {!isDetailLoading && selectedDetailFile && (
+            <>
+              <div className="mt-4 rounded-xl border border-[var(--line)] bg-white/70 p-3">
+                <p className="font-semibold text-[var(--ink)]">{selectedDetailFile.nombre}</p>
+                <p className="text-xs text-[var(--ink-soft)]">Tipo: {selectedDetailFile.tipoArchivo}</p>
+                <p className="text-xs text-[var(--ink-soft)]">Peso: {formatFileSize(selectedDetailFile)}</p>
+                <p className="text-xs text-[var(--ink-soft)]">Subido: {new Date(selectedDetailFile.fechaSubida).toLocaleString()}</p>
               </div>
-            ))}
-          </div>
+
+              <div className="mt-4 max-h-56 space-y-2 overflow-y-auto pr-1">
+                {versionHistory.length === 0 && (
+                  <p className="text-sm text-[var(--ink-soft)]">Sin historial registrado.</p>
+                )}
+                {versionHistory.map((version) => (
+                  <div key={version.id} className="rounded-xl border border-[var(--line)] bg-white/70 px-3 py-2">
+                    <p className="text-sm font-semibold text-[var(--ink)]">Version {version.versionNumero}</p>
+                    <p className="text-xs text-[var(--ink-soft)]">{version.comentarioCambio || 'Sin comentario'}</p>
+                    <p className="text-xs text-[var(--ink-soft)]">
+                      {new Date(version.fechaVersion).toLocaleString()}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            </>
+          )}
         </article>
       </section>
 
@@ -389,6 +550,7 @@ export function DashboardPage({ user, onSessionClosed }) {
 
         <article className="glass-card fade-up rounded-2xl p-5">
           <h2 className="title-font text-xl font-semibold text-[var(--ink)]">Subir archivo</h2>
+
           <form onSubmit={handleUpload} className="mt-4 space-y-3">
             <select
               required
@@ -404,12 +566,38 @@ export function DashboardPage({ user, onSessionClosed }) {
               ))}
             </select>
 
-            <input
-              required
-              type="file"
-              onChange={(event) => setSelectedFile(event.target.files?.[0] ?? null)}
-              className="w-full rounded-xl border border-[var(--line)] bg-white px-4 py-3 text-sm outline-none transition file:mr-3 file:rounded-lg file:border-0 file:bg-emerald-100 file:px-3 file:py-1 file:text-sm file:font-semibold file:text-emerald-700"
-            />
+            <div
+              onDragOver={handleDragOver}
+              onDragLeave={handleDragLeave}
+              onDrop={handleDrop}
+              className={`rounded-xl border-2 border-dashed px-4 py-6 text-center transition ${
+                isDragging ? 'border-[var(--brand)] bg-emerald-50' : 'border-[var(--line)] bg-white/60'
+              }`}
+            >
+              <p className="text-sm font-semibold text-[var(--ink)]">Arrastra un archivo aqui</p>
+              <p className="mt-1 text-xs text-[var(--ink-soft)]">o selecciona uno desde tu equipo</p>
+
+              <input
+                required={!selectedFile}
+                type="file"
+                onChange={(event) => setSelectedFile(event.target.files?.[0] ?? null)}
+                className="mt-3 w-full rounded-xl border border-[var(--line)] bg-white px-4 py-2 text-sm outline-none transition file:mr-3 file:rounded-lg file:border-0 file:bg-emerald-100 file:px-3 file:py-1 file:text-sm file:font-semibold file:text-emerald-700"
+              />
+
+              {selectedFile && <p className="mt-2 text-xs text-[var(--ink-soft)]">Seleccionado: {selectedFile.name}</p>}
+            </div>
+
+            {uploadProgress > 0 && (
+              <div className="space-y-1">
+                <div className="h-2 overflow-hidden rounded bg-slate-200">
+                  <div
+                    className="h-full bg-[var(--brand)] transition-all"
+                    style={{ width: `${uploadProgress}%` }}
+                  />
+                </div>
+                <p className="text-xs text-[var(--ink-soft)]">Subiendo... {uploadProgress}%</p>
+              </div>
+            )}
 
             <button
               type="submit"
@@ -478,6 +666,57 @@ export function DashboardPage({ user, onSessionClosed }) {
               Asignar etiqueta
             </button>
           </form>
+
+          <div className="mt-5 space-y-2">
+            {data.etiquetas.slice(0, 8).map((etiqueta) => (
+              <div key={etiqueta.id} className="rounded-xl border border-[var(--line)] bg-white/70 px-3 py-2">
+                {editingTagId === etiqueta.id ? (
+                  <form onSubmit={handleSaveEditTag} className="space-y-2">
+                    <input
+                      value={editingTagName}
+                      onChange={(event) => setEditingTagName(event.target.value)}
+                      className="w-full rounded-lg border border-[var(--line)] px-2 py-1 text-sm"
+                    />
+                    <div className="flex gap-2">
+                      <button type="submit" className="rounded bg-emerald-600 px-2 py-1 text-xs font-semibold text-white">
+                        Guardar
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setEditingTagId('')
+                          setEditingTagName('')
+                        }}
+                        className="rounded bg-slate-200 px-2 py-1 text-xs font-semibold text-slate-700"
+                      >
+                        Cancelar
+                      </button>
+                    </div>
+                  </form>
+                ) : (
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="text-sm font-semibold text-[var(--ink)]">{etiqueta.nombreEtiqueta}</p>
+                    <div className="flex gap-2">
+                      <button
+                        type="button"
+                        onClick={() => handleStartEditTag(etiqueta)}
+                        className="rounded bg-slate-100 px-2 py-1 text-xs font-semibold text-slate-700"
+                      >
+                        Editar
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleDeleteTag(etiqueta.id)}
+                        className="rounded bg-rose-100 px-2 py-1 text-xs font-semibold text-rose-700"
+                      >
+                        Eliminar
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
         </article>
 
         <article className="glass-card fade-up rounded-2xl p-5 lg:col-span-2">
@@ -515,18 +754,64 @@ export function DashboardPage({ user, onSessionClosed }) {
             </button>
           </form>
 
-          <div className="mt-4 max-h-60 space-y-2 overflow-y-auto pr-1">
+          <div className="mt-4 max-h-72 space-y-2 overflow-y-auto pr-1">
             {!selectedCommentFileId && (
               <p className="text-sm text-[var(--ink-soft)]">Selecciona un archivo para ver comentarios.</p>
             )}
             {isCommentsLoading && <p className="text-sm text-[var(--ink-soft)]">Cargando comentarios...</p>}
-            {selectedCommentFileId && !isCommentsLoading && comments.length === 0 && (
+            {selectedCommentFileId && !isCommentsLoading && visibleComments.length === 0 && (
               <p className="text-sm text-[var(--ink-soft)]">Este archivo aun no tiene comentarios.</p>
             )}
-            {comments.map((comentario) => (
+
+            {visibleComments.map((comentario) => (
               <div key={comentario.id} className="rounded-xl border border-[var(--line)] bg-white/70 px-3 py-2">
-                <p className="text-sm text-[var(--ink)]">{comentario.comentario}</p>
-                <p className="mt-1 text-xs text-[var(--ink-soft)]">Usuario: {comentario.usuarioId}</p>
+                {editingCommentId === comentario.id ? (
+                  <form onSubmit={handleSaveEditComment} className="space-y-2">
+                    <input
+                      value={editingCommentText}
+                      onChange={(event) => setEditingCommentText(event.target.value)}
+                      className="w-full rounded-lg border border-[var(--line)] px-2 py-1 text-sm"
+                    />
+                    <div className="flex gap-2">
+                      <button type="submit" className="rounded bg-emerald-600 px-2 py-1 text-xs font-semibold text-white">
+                        Guardar
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setEditingCommentId('')
+                          setEditingCommentText('')
+                        }}
+                        className="rounded bg-slate-200 px-2 py-1 text-xs font-semibold text-slate-700"
+                      >
+                        Cancelar
+                      </button>
+                    </div>
+                  </form>
+                ) : (
+                  <div className="space-y-2">
+                    <p className="text-sm text-[var(--ink)]">{comentario.comentario}</p>
+                    <div className="flex items-center justify-between">
+                      <p className="text-xs text-[var(--ink-soft)]">Usuario: {comentario.usuarioId}</p>
+                      <div className="flex gap-2">
+                        <button
+                          type="button"
+                          onClick={() => handleStartEditComment(comentario)}
+                          className="rounded bg-slate-100 px-2 py-1 text-xs font-semibold text-slate-700"
+                        >
+                          Editar
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteComment(comentario.id)}
+                          className="rounded bg-rose-100 px-2 py-1 text-xs font-semibold text-rose-700"
+                        >
+                          Eliminar
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                )}
               </div>
             ))}
           </div>

@@ -22,6 +22,15 @@ namespace VaultDrive.Abstracciones.Repositories
                 .SortByDescending(c => c.Fecha)
                 .ToListAsync();
 
+        public async Task<Comentarios?> ObtenerPorId(Guid id)
+            => await _collection.Find(c => c.Id == id).FirstOrDefaultAsync();
+
+        public async Task<bool> Actualizar(Comentarios comentario)
+        {
+            var resultado = await _collection.ReplaceOneAsync(c => c.Id == comentario.Id, comentario);
+            return resultado.ModifiedCount > 0;
+        }
+
         public async Task<bool> Eliminar(Guid id)
         {
             var resultado = await _collection.DeleteOneAsync(c => c.Id == id);

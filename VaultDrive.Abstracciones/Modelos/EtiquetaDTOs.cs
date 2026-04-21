@@ -6,6 +6,11 @@ namespace VaultDrive.Abstracciones.DTOs
         public string NombreEtiqueta { get; set; } = string.Empty;
     }
 
+    public class ActualizarEtiquetaDto
+    {
+        public string NombreEtiqueta { get; set; } = string.Empty;
+    }
+
     public class AsignarEtiquetaDto
     {
         public Guid ArchivoId { get; set; }

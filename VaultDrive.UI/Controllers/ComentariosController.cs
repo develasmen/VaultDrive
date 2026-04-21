@@ -36,6 +36,23 @@ namespace VaultDrive.UI.Controllers
             return Ok(new { success = true, data = comentarios });
         }
 
+        [HttpPut("{id}")]
+        public async Task<IActionResult> Actualizar(Guid id, [FromBody] ActualizarComentarioDto dto)
+        {
+            try
+            {
+                var actualizado = await _comentarioService.ActualizarComentarioAsync(id, dto.Comentario);
+                if (!actualizado)
+                    return NotFound(new { success = false, mensaje = "Comentario no encontrado" });
+
+                return Ok(new { success = true, mensaje = "Comentario actualizado correctamente" });
+            }
+            catch (Exception ex)
+            {
+                return BadRequest(new { success = false, mensaje = ex.Message });
+            }
+        }
+
         [HttpDelete("{id}")]
         public async Task<IActionResult> Eliminar(Guid id)
         {

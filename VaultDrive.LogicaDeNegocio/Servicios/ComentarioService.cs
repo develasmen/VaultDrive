@@ -33,6 +33,20 @@ namespace VaultDrive.LogicaDeNegocio.Servicios
         public async Task<List<Comentarios>> ObtenerPorArchivoAsync(Guid archivoId)
             => await _repository.ObtenerPorArchivo(archivoId);
 
+        public async Task<bool> ActualizarComentarioAsync(Guid id, string nuevoComentario)
+        {
+            if (string.IsNullOrWhiteSpace(nuevoComentario))
+                throw new InvalidOperationException("El comentario no puede estar vacío");
+
+            var existente = await _repository.ObtenerPorId(id);
+            if (existente is null)
+                return false;
+
+            existente.Comentario = nuevoComentario.Trim();
+            existente.Fecha = DateTime.UtcNow;
+            return await _repository.Actualizar(existente);
+        }
+
         public async Task<bool> EliminarComentarioAsync(Guid id)
             => await _repository.Eliminar(id);
     }

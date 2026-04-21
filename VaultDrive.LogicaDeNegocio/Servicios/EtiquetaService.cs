@@ -34,6 +34,19 @@ namespace VaultDrive.LogicaDeNegocio.Servicios
         public async Task<List<Etiqueta>> ObtenerEtiquetasAsync(Guid usuarioId)
             => await _etiquetaRepository.ObtenerPorUsuario(usuarioId);
 
+        public async Task<bool> ActualizarEtiquetaAsync(Guid id, string nuevoNombre)
+        {
+            if (string.IsNullOrWhiteSpace(nuevoNombre))
+                throw new InvalidOperationException("El nombre de la etiqueta es requerido");
+
+            var etiqueta = await _etiquetaRepository.ObtenerPorId(id);
+            if (etiqueta is null)
+                return false;
+
+            etiqueta.NombreEtiqueta = nuevoNombre.Trim();
+            return await _etiquetaRepository.Actualizar(etiqueta);
+        }
+
         public async Task<bool> EliminarEtiquetaAsync(Guid id)
             => await _etiquetaRepository.Eliminar(id);
 

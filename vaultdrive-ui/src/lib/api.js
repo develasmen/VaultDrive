@@ -71,6 +71,19 @@ export function crearEtiqueta(payload) {
   })
 }
 
+export function actualizarEtiqueta(id, payload) {
+  return request(`/Etiquetas/${id}`, {
+    method: 'PUT',
+    body: JSON.stringify(payload),
+  })
+}
+
+export function eliminarEtiqueta(id) {
+  return request(`/Etiquetas/${id}`, {
+    method: 'DELETE',
+  })
+}
+
 export function asignarEtiqueta(payload) {
   return request('/Etiquetas/asignar', {
     method: 'POST',
@@ -99,8 +112,29 @@ export function crearComentario(payload) {
   })
 }
 
+export function actualizarComentario(id, payload) {
+  return request(`/Comentarios/${id}`, {
+    method: 'PUT',
+    body: JSON.stringify(payload),
+  })
+}
+
+export function eliminarComentario(id) {
+  return request(`/Comentarios/${id}`, {
+    method: 'DELETE',
+  })
+}
+
 export function getComentariosByArchivo(archivoId) {
   return request(`/Comentarios/${archivoId}`)
+}
+
+export function getArchivoById(id) {
+  return request(`/Archivo/${id}`)
+}
+
+export function getHistorialVersiones(archivoId) {
+  return request(`/VersionArchivo/historial/${archivoId}`)
 }
 
 export async function subirArchivo({ usuarioId, carpetaId, file }) {
@@ -125,4 +159,46 @@ export async function subirArchivo({ usuarioId, carpetaId, file }) {
   }
 
   return data
+}
+
+export function subirArchivoConProgreso({ usuarioId, carpetaId, file, onProgress }) {
+  return new Promise((resolve, reject) => {
+    const formData = new FormData()
+    formData.append('file', file)
+
+    const xhr = new XMLHttpRequest()
+    xhr.open('POST', `${API_BASE_URL}/Archivo/subir?usuarioId=${usuarioId}&carpetaId=${carpetaId}`)
+    xhr.withCredentials = true
+
+    xhr.upload.onprogress = (event) => {
+      if (event.lengthComputable) {
+        const percent = Math.round((event.loaded / event.total) * 100)
+        onProgress?.(percent)
+      }
+    }
+
+    xhr.onload = () => {
+      let data = null
+
+      try {
+        data = xhr.responseText ? JSON.parse(xhr.responseText) : null
+      } catch {
+        data = null
+      }
+
+      if (xhr.status >= 200 && xhr.status < 300) {
+        resolve(data)
+        return
+      }
+
+      const message = data?.mensaje ?? data?.message ?? 'No se pudo subir el archivo'
+      reject(new Error(message))
+    }
+
+    xhr.onerror = () => {
+      reject(new Error('Error de red al subir archivo'))
+    }
+
+    xhr.send(formData)
+  })
 }

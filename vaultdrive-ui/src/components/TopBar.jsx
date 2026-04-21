@@ -8,10 +8,10 @@ export function TopBar({ user, onLogout }) {
         </div>
 
         <div>
-        <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[var(--ink-soft)]">
-          VaultDrive Workspace
-        </p>
-        <h1 className="title-font text-2xl font-semibold text-[var(--ink)]">Panel de control</h1>
+          <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[var(--ink-soft)]">
+            VaultDrive Workspace
+          </p>
+          <h1 className="title-font text-2xl font-semibold text-[var(--ink)]">Panel de control</h1>
         </div>
       </div>
 
