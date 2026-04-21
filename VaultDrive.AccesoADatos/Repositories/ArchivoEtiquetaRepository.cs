@@ -19,6 +19,9 @@ namespace VaultDrive.Abstracciones.Repositories
         public async Task<List<ArchivoEtiqueta>> ObtenerPorArchivo(Guid archivoId)
             => await _collection.Find(ae => ae.ArchivoId == archivoId).ToListAsync();
 
+        public async Task<List<ArchivoEtiqueta>> ObtenerPorArchivos(List<Guid> archivoIds)
+            => await _collection.Find(ae => archivoIds.Contains(ae.ArchivoId)).ToListAsync();
+
         public async Task<List<ArchivoEtiqueta>> ObtenerPorEtiqueta(Guid etiquetaId)
             => await _collection.Find(ae => ae.EtiquetaId == etiquetaId).ToListAsync();
 

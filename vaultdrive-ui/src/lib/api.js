@@ -251,3 +251,17 @@ export function actualizarPersonalizacion(dto) {
 export function eliminarPersonalizacion(id) {
   return request(`/ArchivoPersonalizado/${id}`, { method: 'DELETE' })
 }
+
+// ---------- ArchivoEtiqueta ----------
+export function getEtiquetasPorArchivos(archivoIds) {
+  return request('/Etiquetas/por-archivos', { method: 'POST', body: JSON.stringify(archivoIds) })
+}
+
+export function quitarEtiqueta(payload) {
+  return request('/Etiquetas/quitar', { method: 'DELETE', body: JSON.stringify(payload) })
+}
+
+// ---------- RegistroActividad ----------
+export function registrarActividad(payload) {
+  return request('/RegistroActividad', { method: 'POST', body: JSON.stringify(payload) })
+}

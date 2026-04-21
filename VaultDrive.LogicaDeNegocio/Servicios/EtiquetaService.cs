@@ -74,5 +74,11 @@ namespace VaultDrive.LogicaDeNegocio.Servicios
 
         public async Task<bool> QuitarEtiquetaAsync(Guid archivoId, Guid etiquetaId)
             => await _archivoEtiquetaRepository.Eliminar(archivoId, etiquetaId);
+
+        public async Task<List<ArchivoEtiqueta>> GetEtiquetasByArchivoIds(List<Guid> archivoIds)
+        {
+            if (archivoIds == null || archivoIds.Count == 0) return new List<ArchivoEtiqueta>();
+            return await _archivoEtiquetaRepository.ObtenerPorArchivos(archivoIds);
+        }
     }
 }

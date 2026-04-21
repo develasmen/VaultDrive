@@ -22,13 +22,16 @@ import {
   getComentariosByArchivo,
   getConfiguracion,
   getEtiquetasByUsuario,
+  getEtiquetasPorArchivos,
   getFavoritosByUsuario,
   getHistorialVersiones,
   getPersonalizacion,
   getPersonalizacionesBulk,
   getRegistroActividad,
   logout,
+  quitarEtiqueta,
   quitarFavorito,
+  registrarActividad,
   subirArchivoConProgreso,
 } from '../lib/api'
 import { clearSession } from '../lib/session'
@@ -39,12 +42,14 @@ import {
   EditIcon,
   FileIcon,
   FolderIcon,
+  MessageIcon,
   MoonIcon,
   PaintbrushIcon,
   PlusIcon,
   SettingsIcon,
   StarIcon,
   SunIcon,
+  TagIcon,
   TrashIcon,
   UploadIcon,
   XIcon,
@@ -148,6 +153,8 @@ export function DashboardPage({ user, onSessionClosed }) {
   const [customForm, setCustomForm] = useState({ imagenPortada: '', colorTexto: '#000000', fuente: 'Arial' })
   // Map archivoId → personalizacion para aplicar en el listado
   const [personalizacionesMap, setPersonalizacionesMap] = useState({})
+  // Map archivoId → ArchivoEtiqueta[] para mostrar chips de etiquetas
+  const [fileTagsMap, setFileTagsMap] = useState({})
 
   // ---------- data loading ----------
   const refreshPersonalizaciones = useCallback(async (archivos) => {
@@ -161,6 +168,23 @@ export function DashboardPage({ user, onSessionClosed }) {
       setPersonalizacionesMap(map)
     } catch {
       setPersonalizacionesMap({})
+    }
+  }, [])
+
+  const refreshFileTagsMap = useCallback(async (archivos) => {
+    if (!archivos || archivos.length === 0) { setFileTagsMap({}); return }
+    try {
+      const ids = archivos.map((a) => a.id)
+      const res = await getEtiquetasPorArchivos(ids)
+      const list = res?.data ?? []
+      const map = {}
+      list.forEach((ae) => {
+        if (!map[ae.archivoId]) map[ae.archivoId] = []
+        map[ae.archivoId].push(ae)
+      })
+      setFileTagsMap(map)
+    } catch {
+      setFileTagsMap({})
     }
   }, [])
 
@@ -178,8 +202,8 @@ export function DashboardPage({ user, onSessionClosed }) {
       etiquetas: etiquetasRes?.data ?? [],
       favoritos: favoritosRes?.data ?? [],
     })
-    refreshPersonalizaciones(archivos)
-  }, [user.id, refreshPersonalizaciones])
+    await Promise.all([refreshPersonalizaciones(archivos), refreshFileTagsMap(archivos)])
+  }, [user.id, refreshPersonalizaciones, refreshFileTagsMap])
 
   useEffect(() => {
     let mounted = true
@@ -217,8 +241,20 @@ export function DashboardPage({ user, onSessionClosed }) {
     [data],
   )
 
+  const etiquetasById = useMemo(() => {
+    const map = {}
+    data.etiquetas.forEach((e) => { map[e.id] = e })
+    return map
+  }, [data.etiquetas])
+
   // ---------- handlers ----------
   const resetMessages = () => { setError(''); setActionMessage('') }
+
+  const logActivity = useCallback(async (accion, archivoId = null, carpetaId = null) => {
+    try {
+      await registrarActividad({ usuarioId: user.id, accion, archivoId, carpetaId })
+    } catch (err) { console.error('[logActivity]', err) }
+  }, [user.id])
 
   const handleLogout = async () => {
     try { await logout() } catch { /* swallow */ }
@@ -230,11 +266,12 @@ export function DashboardPage({ user, onSessionClosed }) {
     e.preventDefault()
     resetMessages()
     try {
-      await crearCarpeta({ usuarioId: user.id, nombre: folderName, portadaImg: coverUrl, carpetaPadre: null })
+      const res = await crearCarpeta({ usuarioId: user.id, nombre: folderName, portadaImg: coverUrl, carpetaPadre: null })
       await refreshData()
       setFolderName('')
       setCoverUrl('')
       setActionMessage('Carpeta creada correctamente.')
+      logActivity(`Carpeta creada: ${folderName}`, null, res?.data?.id ?? null)
     } catch (err) { setError(err.message) }
   }
 
@@ -245,6 +282,7 @@ export function DashboardPage({ user, onSessionClosed }) {
       await refreshData()
       if (openFolder?.id === id) setOpenFolder(null)
       setActionMessage('Carpeta eliminada.')
+      logActivity('Carpeta eliminada', null, id)
     } catch (err) { setError(err.message) }
   }
 
@@ -275,8 +313,9 @@ export function DashboardPage({ user, onSessionClosed }) {
     resetMessages()
     if (!selectedFile || !selectedFolderId) { setError('Selecciona carpeta y archivo.'); return }
     setUploadProgress(0)
+    const fileName = selectedFile.name
     try {
-      await subirArchivoConProgreso({
+      const res = await subirArchivoConProgreso({
         usuarioId: user.id,
         carpetaId: selectedFolderId,
         file: selectedFile,
@@ -287,12 +326,14 @@ export function DashboardPage({ user, onSessionClosed }) {
       setSelectedFile(null)
       setUploadProgress(0)
       setActionMessage('Archivo subido correctamente.')
+      logActivity(`Archivo subido: ${fileName}`, res?.data?.id ?? null, selectedFolderId)
     } catch (err) { setError(err.message); setUploadProgress(0) }
   }
 
   const handleDeleteFile = async (id) => {
     resetMessages()
     try {
+      const archivo = data.archivos.find((a) => a.id === id)
       await eliminarArchivo(id)
       await refreshData()
       if (openFolder) {
@@ -301,6 +342,7 @@ export function DashboardPage({ user, onSessionClosed }) {
       }
       if (selectedDetailFileId === id) { setSelectedDetailFile(null); setSelectedDetailFileId('') }
       setActionMessage('Archivo eliminado.')
+      logActivity(`Archivo eliminado: ${archivo?.nombre ?? id}`, id)
     } catch (err) { setError(err.message) }
   }
 
@@ -315,6 +357,15 @@ export function DashboardPage({ user, onSessionClosed }) {
         setActionMessage('Añadido a favoritos.')
       }
       await refreshData()
+    } catch (err) { setError(err.message) }
+  }
+
+  const handleRemoveTag = async (archivoId, etiquetaId) => {
+    resetMessages()
+    try {
+      await quitarEtiqueta({ archivoId, etiquetaId })
+      await refreshFileTagsMap(data.archivos)
+      setActionMessage('Etiqueta quitada.')
     } catch (err) { setError(err.message) }
   }
 
@@ -338,6 +389,7 @@ export function DashboardPage({ user, onSessionClosed }) {
     resetMessages()
     try {
       await crearEtiqueta({ usuarioId: user.id, nombreEtiqueta: newTagName })
+      await refreshFileTagsMap(data.archivos)
       await refreshData()
       setNewTagName('')
       setActionMessage('Etiqueta creada.')
@@ -350,6 +402,7 @@ export function DashboardPage({ user, onSessionClosed }) {
     if (!selectedTagId || !selectedTagFileId) { setError('Selecciona etiqueta y archivo.'); return }
     try {
       await asignarEtiqueta({ archivoId: selectedTagFileId, etiquetaId: selectedTagId })
+      await refreshFileTagsMap(data.archivos)
       setActionMessage('Etiqueta asignada.')
     } catch (err) { setError(err.message) }
   }
@@ -432,6 +485,13 @@ export function DashboardPage({ user, onSessionClosed }) {
   useEffect(() => {
     if (activeSection === 'activity') handleLoadActivity()
   }, [activeSection, handleLoadActivity])
+
+  // Log session start on mount
+  useEffect(() => {
+    registrarActividad({ usuarioId: user.id, accion: 'Sesión iniciada' })
+      .catch((err) => console.error('[logActivity mount]', err))
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   // Load user config (theme) on mount
   useEffect(() => {
@@ -673,87 +733,113 @@ export function DashboardPage({ user, onSessionClosed }) {
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-(--line) bg-(--line-soft)">
-                <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-(--ink-soft)">
-                  Nombre
-                </th>
-                <th className="hidden px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-(--ink-soft) sm:table-cell">
-                  Tipo
-                </th>
-                <th className="hidden px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-(--ink-soft) md:table-cell">
-                  Tamaño
-                </th>
-                <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-(--ink-soft)">
-                  Acciones
-                </th>
+                <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-(--ink-soft)">Nombre</th>
+                <th className="hidden px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-(--ink-soft) sm:table-cell">Tipo</th>
+                <th className="hidden px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-(--ink-soft) md:table-cell">Tamaño</th>
+                <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-(--ink-soft)">Acciones</th>
               </tr>
             </thead>
             <tbody>
               {data.archivos.map((archivo, i) => {
                 const p = personalizacionesMap[archivo.id]
+                const tags = fileTagsMap[archivo.id] ?? []
                 return (
-                <tr
-                  key={archivo.id}
-                  className={`hover:bg-(--line-soft) transition-colors ${
-                    i < data.archivos.length - 1 ? 'border-b border-(--line)' : ''
-                  }`}
-                >
-                  <td className="px-4 py-3">
-                    <div className="flex items-center gap-2.5">
-                      {p?.imagenPortada ? (
-                        <img
-                          src={p.imagenPortada}
-                          alt=""
-                          className="h-7 w-7 shrink-0 rounded object-cover"
-                          onError={(e) => { e.currentTarget.style.display = 'none' }}
-                        />
-                      ) : (
-                        <span className="shrink-0 text-(--ink-xsoft)"><FileIcon /></span>
-                      )}
-                      <button
-                        type="button"
-                        onClick={() => handleSelectDetailFile(archivo.id)}
-                        className="max-w-[180px] truncate font-medium transition-colors hover:text-(--brand)"
-                        style={{
-                          color: p?.colorTexto ?? undefined,
-                          fontFamily: p?.fuente ?? undefined,
-                        }}
-                      >
-                        {archivo.nombre}
-                      </button>
-                    </div>
-                  </td>
-                  <td className="hidden px-4 py-3 text-(--ink-soft) sm:table-cell">
-                    {archivo.tipoArchivo ?? '—'}
-                  </td>
-                  <td className="hidden px-4 py-3 text-(--ink-soft) md:table-cell">
-                    {formatSize(archivo)}
-                  </td>
-                  <td className="px-4 py-3">
-                    <div className="flex items-center justify-end gap-1.5">
-                      <button
-                        type="button"
-                        onClick={() => handleToggleFavorite(archivo.id)}
-                        className={`rounded-lg p-1.5 transition-colors ${
-                          favoritesSet.has(archivo.id)
-                            ? 'bg-(--accent-light) text-amber-500'
-                            : 'text-(--ink-xsoft) hover:bg-(--line-soft)'
-                        }`}
-                        title={favoritesSet.has(archivo.id) ? 'Quitar favorito' : 'Marcar favorito'}
-                      >
-                        <StarIcon size={14} filled={favoritesSet.has(archivo.id)} />
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => handleDeleteFile(archivo.id)}
-                        className="rounded-lg p-1.5 text-(--ink-xsoft) transition-colors hover:bg-(--danger-light) hover:text-(--danger-text)"
-                        title="Eliminar"
-                      >
-                        <TrashIcon />
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              )
+                  <tr
+                    key={archivo.id}
+                    className={`hover:bg-(--line-soft) transition-colors ${i < data.archivos.length - 1 ? 'border-b border-(--line)' : ''}`}
+                  >
+                    <td className="px-4 py-3">
+                      <div className="flex items-center gap-2.5">
+                        {p?.imagenPortada ? (
+                          <img
+                            src={p.imagenPortada}
+                            alt=""
+                            className="h-8 w-8 shrink-0 rounded object-cover"
+                            onError={(e) => { e.currentTarget.style.display = 'none' }}
+                          />
+                        ) : (
+                          <span className="shrink-0 text-(--ink-xsoft)"><FileIcon /></span>
+                        )}
+                        <div className="min-w-0">
+                          <button
+                            type="button"
+                            onClick={() => handleSelectDetailFile(archivo.id)}
+                            className="block max-w-50 truncate font-medium transition-colors hover:text-(--brand)"
+                            style={{
+                              color: p?.colorTexto ?? undefined,
+                              fontFamily: p?.fuente ?? undefined,
+                            }}
+                          >
+                            {archivo.nombre}
+                          </button>
+                          {tags.length > 0 && (
+                            <div className="mt-1 flex flex-wrap gap-1">
+                              {tags.map((ae) => {
+                                const tag = etiquetasById[ae.etiquetaId]
+                                if (!tag) return null
+                                return (
+                                  <span
+                                    key={ae.etiquetaId}
+                                    className="inline-flex items-center gap-0.5 rounded-full bg-(--brand-light) px-2 py-0.5 text-[11px] font-medium text-(--brand-text)"
+                                  >
+                                    <TagIcon size={10} />
+                                    {tag.nombreEtiqueta}
+                                    <button
+                                      type="button"
+                                      onClick={() => handleRemoveTag(archivo.id, ae.etiquetaId)}
+                                      className="ml-0.5 opacity-60 hover:opacity-100"
+                                      title="Quitar etiqueta"
+                                    >
+                                      <XIcon size={10} />
+                                    </button>
+                                  </span>
+                                )
+                              })}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </td>
+                    <td className="hidden px-4 py-3 text-(--ink-soft) sm:table-cell">{archivo.tipoArchivo ?? '—'}</td>
+                    <td className="hidden px-4 py-3 text-(--ink-soft) md:table-cell">{formatSize(archivo)}</td>
+                    <td className="px-4 py-3">
+                      <div className="flex items-center justify-end gap-1">
+                        <button
+                          type="button"
+                          onClick={() => handleToggleFavorite(archivo.id)}
+                          className={`rounded-lg p-1.5 transition-colors ${favoritesSet.has(archivo.id) ? 'bg-(--accent-light) text-amber-500' : 'text-(--ink-xsoft) hover:bg-(--line-soft)'}`}
+                          title={favoritesSet.has(archivo.id) ? 'Quitar favorito' : 'Marcar favorito'}
+                        >
+                          <StarIcon size={14} filled={favoritesSet.has(archivo.id)} />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => { setSelectedCommentFileId(archivo.id); setActiveSection('comments') }}
+                          className="rounded-lg p-1.5 text-(--ink-xsoft) transition-colors hover:bg-(--line-soft) hover:text-blue-500"
+                          title="Ver comentarios"
+                        >
+                          <MessageIcon size={14} />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => { setCustomFileId(archivo.id); handleLoadCustom(archivo.id); setActiveSection('customization') }}
+                          className="rounded-lg p-1.5 text-(--ink-xsoft) transition-colors hover:bg-(--line-soft) hover:text-purple-500"
+                          title="Personalizar"
+                        >
+                          <PaintbrushIcon size={14} />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteFile(archivo.id)}
+                          className="rounded-lg p-1.5 text-(--ink-xsoft) transition-colors hover:bg-(--danger-light) hover:text-(--danger-text)"
+                          title="Eliminar"
+                        >
+                          <TrashIcon />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                )
               })}
             </tbody>
           </table>
@@ -793,38 +879,98 @@ export function DashboardPage({ user, onSessionClosed }) {
                 </p>
               </div>
               <div className="divide-y divide-(--line)">
-                {folderFiles.map((archivo) => (
-                  <div
-                    key={archivo.id}
-                    className="group flex items-center gap-3 px-4 py-3 transition-colors hover:bg-(--line-soft)"
-                  >
-                    <span className="shrink-0 text-(--ink-xsoft)"><FileIcon /></span>
-                    <div className="min-w-0 flex-1">
-                      <p className="truncate text-sm font-medium text-(--ink)">{archivo.nombre}</p>
-                      <p className="text-xs text-(--ink-xsoft)">{formatSize(archivo)}</p>
+                {folderFiles.map((archivo) => {
+                  const p = personalizacionesMap[archivo.id]
+                  const tags = fileTagsMap[archivo.id] ?? []
+                  return (
+                    <div
+                      key={archivo.id}
+                      className="group flex items-center gap-3 px-4 py-3 transition-colors hover:bg-(--line-soft)"
+                    >
+                      {p?.imagenPortada ? (
+                        <img
+                          src={p.imagenPortada}
+                          alt=""
+                          className="h-8 w-8 shrink-0 rounded object-cover"
+                          onError={(e) => { e.currentTarget.style.display = 'none' }}
+                        />
+                      ) : (
+                        <span className="shrink-0 text-(--ink-xsoft)"><FileIcon /></span>
+                      )}
+                      <div className="min-w-0 flex-1">
+                        <p
+                          className="truncate text-sm font-medium"
+                          style={{
+                            color: p?.colorTexto ?? undefined,
+                            fontFamily: p?.fuente ?? undefined,
+                          }}
+                        >
+                          {archivo.nombre}
+                        </p>
+                        <p className="text-xs text-(--ink-xsoft)">{formatSize(archivo)}</p>
+                        {tags.length > 0 && (
+                          <div className="mt-1 flex flex-wrap gap-1">
+                            {tags.map((ae) => {
+                              const tag = etiquetasById[ae.etiquetaId]
+                              if (!tag) return null
+                              return (
+                                <span
+                                  key={ae.etiquetaId}
+                                  className="inline-flex items-center gap-0.5 rounded-full bg-(--brand-light) px-2 py-0.5 text-[11px] font-medium text-(--brand-text)"
+                                >
+                                  <TagIcon size={10} />
+                                  {tag.nombreEtiqueta}
+                                  <button
+                                    type="button"
+                                    onClick={() => handleRemoveTag(archivo.id, ae.etiquetaId)}
+                                    className="ml-0.5 opacity-60 hover:opacity-100"
+                                    title="Quitar etiqueta"
+                                  >
+                                    <XIcon size={10} />
+                                  </button>
+                                </span>
+                              )
+                            })}
+                          </div>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100">
+                        <button
+                          type="button"
+                          onClick={() => handleToggleFavorite(archivo.id)}
+                          className={`rounded-lg p-1.5 transition-colors ${favoritesSet.has(archivo.id) ? 'text-amber-400' : 'text-(--ink-xsoft) hover:text-amber-400'}`}
+                          title={favoritesSet.has(archivo.id) ? 'Quitar favorito' : 'Marcar favorito'}
+                        >
+                          <StarIcon size={14} filled={favoritesSet.has(archivo.id)} />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => { setSelectedCommentFileId(archivo.id); setActiveSection('comments') }}
+                          className="rounded-lg p-1.5 text-(--ink-xsoft) transition-colors hover:text-blue-500"
+                          title="Ver comentarios"
+                        >
+                          <MessageIcon size={14} />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => { setCustomFileId(archivo.id); handleLoadCustom(archivo.id); setActiveSection('customization') }}
+                          className="rounded-lg p-1.5 text-(--ink-xsoft) transition-colors hover:text-purple-500"
+                          title="Personalizar"
+                        >
+                          <PaintbrushIcon size={14} />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteFile(archivo.id)}
+                          className="rounded-lg p-1.5 text-(--ink-xsoft) transition-colors hover:text-(--danger-text)"
+                          title="Eliminar"
+                        >
+                          <TrashIcon />
+                        </button>
+                      </div>
                     </div>
-                    <div className="flex items-center gap-1.5 opacity-0 transition-opacity group-hover:opacity-100">
-                      <button
-                        type="button"
-                        onClick={() => handleToggleFavorite(archivo.id)}
-                        className={`rounded-lg p-1.5 transition-colors ${
-                          favoritesSet.has(archivo.id)
-                            ? 'text-amber-400'
-                            : 'text-(--ink-xsoft) hover:text-amber-400'
-                        }`}
-                      >
-                        <StarIcon size={14} filled={favoritesSet.has(archivo.id)} />
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => handleDeleteFile(archivo.id)}
-                        className="rounded-lg p-1.5 text-(--ink-xsoft) transition-colors hover:text-(--danger-text)"
-                      >
-                        <TrashIcon />
-                      </button>
-                    </div>
-                  </div>
-                ))}
+                  )
+                })}
               </div>
             </div>
           )}

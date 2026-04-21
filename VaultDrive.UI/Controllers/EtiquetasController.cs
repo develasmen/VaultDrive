@@ -84,6 +84,13 @@ namespace VaultDrive.UI.Controllers
             return Ok(new { success = true, data = etiquetas });
         }
 
+        [HttpPost("por-archivos")]
+        public async Task<IActionResult> PorArchivos([FromBody] List<Guid> archivoIds)
+        {
+            var resultado = await _etiquetaService.GetEtiquetasByArchivoIds(archivoIds);
+            return Ok(new { success = true, data = resultado });
+        }
+
         [HttpDelete("quitar")]
         public async Task<IActionResult> Quitar([FromBody] AsignarEtiquetaDto dto)
         {
